@@ -26,6 +26,9 @@ type Module interface {
 	// Delete a session.
 	DeleteSession(ctx context.Context, accessToken string) error
 
+	// Get the logout context for the current session.
+	GetSessionLogoutContext(ctx context.Context, siteURL *url.URL) (*authtypes.SessionLogoutContext, error)
+
 	// Get the rotation interval for the session.
 	GetRotationInterval(ctx context.Context) time.Duration
 }
@@ -51,4 +54,7 @@ type Handler interface {
 
 	// Delete a session.
 	DeleteSession(http.ResponseWriter, *http.Request)
+
+	// Get logout context for a session.
+	GetSessionLogoutContext(http.ResponseWriter, *http.Request)
 }

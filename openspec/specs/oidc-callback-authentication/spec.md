@@ -12,6 +12,7 @@ The system SHALL generate OIDC authorization URLs for OIDC auth domains that inc
 - **THEN** the URL targets the provider authorization endpoint
 - **AND** the query includes `redirect_uri` ending with `/api/v1/complete/oidc`
 - **AND** the query includes a versioned, signed `state` value
+- **AND** the query includes `prompt=select_account`
 
 ### Requirement: OIDC callback exchange and claim resolution
 The system SHALL exchange callback `code` for tokens, verify `id_token`, and resolve identity claims by merging ID token claims with UserInfo claims when configured or required.
@@ -69,3 +70,18 @@ The session callback endpoint SHALL redirect to provider return URL on success a
 - **WHEN** `/api/v1/complete/oidc` is requested
 - **THEN** response is HTTP 303 redirect to `/login` with callback error query parameters
 
+### Requirement: OIDC logout context generation with provider end-session metadata
+The system SHALL expose a session logout context for OIDC users by deriving provider end-session URL and adding post-logout redirect parameters.
+
+#### Scenario: Build OIDC provider logout URL
+- **GIVEN** the current authenticated user belongs to an OIDC-enabled auth domain
+- **AND** provider metadata includes `end_session_endpoint`
+- **WHEN** session logout context is requested
+- **THEN** response includes a non-empty logout URL targeting provider `end_session_endpoint`
+- **AND** the URL query includes `post_logout_redirect_uri` pointing to `/login` on the current SigNoz origin
+- **AND** the URL query includes `client_id` from OIDC domain configuration
+
+#### Scenario: Fallback when provider logout is unavailable
+- **GIVEN** the current authenticated user does not map to an OIDC logout URL (for example, metadata has no `end_session_endpoint`)
+- **WHEN** session logout context is requested
+- **THEN** response includes an empty logout URL so clients can fallback to local logout behavior

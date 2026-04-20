@@ -39,3 +39,17 @@ The system SHALL map user-entered OIDC form fields into API payload format and m
 - **THEN** scopes are shown as text
 - **AND** `allowJit` defaults to checked when omitted
 
+### Requirement: OIDC admin UI SHALL show copyable integration URLs
+The OIDC configuration UI SHALL show copy-ready URLs for provider integration setup.
+
+#### Scenario: Show callback URL for provider redirect URI setup
+- **GIVEN** admin opens OIDC configuration page
+- **WHEN** the form is rendered
+- **THEN** a copyable `OIDC Callback URL` is shown
+- **AND** the value is `<current-origin>/api/v1/complete/oidc`
+
+#### Scenario: Show post logout redirect URI for provider logout setup
+- **GIVEN** admin opens OIDC configuration page
+- **WHEN** the form is rendered
+- **THEN** a copyable `Post Logout Redirect URI` is shown
+- **AND** the value is `<current-origin>/login`

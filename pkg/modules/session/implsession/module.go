@@ -201,6 +201,51 @@ func (module *module) DeleteSession(ctx context.Context, accessToken string) err
 	return module.tokenizer.DeleteToken(ctx, accessToken)
 }
 
+func (module *module) GetSessionLogoutContext(ctx context.Context, siteURL *url.URL) (*authtypes.SessionLogoutContext, error) {
+	claims, err := authtypes.ClaimsFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	email, err := valuer.NewEmail(claims.Email)
+	if err != nil {
+		return nil, err
+	}
+
+	orgID, err := valuer.NewUUID(claims.OrgID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Since email is a valuer, we can safely split to retrieve the domain.
+	name := strings.Split(email.String(), "@")[1]
+	authDomain, err := module.authDomain.GetByNameAndOrgID(ctx, name, orgID)
+	if err != nil {
+		if errors.Ast(err, errors.TypeNotFound) {
+			return authtypes.NewSessionLogoutContext(""), nil
+		}
+
+		return nil, err
+	}
+
+	if !authDomain.AuthDomainConfig().SSOEnabled {
+		return authtypes.NewSessionLogoutContext(""), nil
+	}
+
+	logoutProvider, ok := module.authNs[authDomain.AuthDomainConfig().AuthNProvider].(authn.LogoutURLProvider)
+	if !ok {
+		return authtypes.NewSessionLogoutContext(""), nil
+	}
+
+	logoutURL, err := logoutProvider.LogoutURL(ctx, siteURL, authDomain)
+	if err != nil {
+		module.settings.Logger().WarnContext(ctx, "failed to compute provider logout URL", errors.Attr(err), slog.Any("authn_provider", authDomain.AuthDomainConfig().AuthNProvider))
+		return authtypes.NewSessionLogoutContext(""), nil
+	}
+
+	return authtypes.NewSessionLogoutContext(logoutURL), nil
+}
+
 func (module *module) GetRotationInterval(context.Context) time.Duration {
 	return module.tokenizer.Config().Rotation.Interval
 }

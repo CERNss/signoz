@@ -80,6 +80,7 @@ func newOIDCTestServer(t *testing.T, tokenClaims map[string]any, userInfoClaims 
 	handler.HandleFunc("/token", testServer.handleToken)
 	handler.HandleFunc("/keys", testServer.handleKeys)
 	handler.HandleFunc("/userinfo", testServer.handleUserInfo)
+	handler.HandleFunc("/end_session", testServer.handleEndSession)
 
 	testServer.server = httptest.NewServer(handler)
 	testServer.issuer = testServer.server.URL
@@ -100,6 +101,7 @@ func (s *oidcTestServer) handleDiscovery(rw http.ResponseWriter, _ *http.Request
 		"authorization_endpoint": s.issuer + "/authorize",
 		"token_endpoint":         s.issuer + "/token",
 		"userinfo_endpoint":      s.issuer + "/userinfo",
+		"end_session_endpoint":   s.issuer + "/end_session",
 		"jwks_uri":               s.issuer + "/keys",
 		"id_token_signing_alg_values_supported": []string{
 			"RS256",
@@ -158,6 +160,10 @@ func (s *oidcTestServer) handleUserInfo(rw http.ResponseWriter, _ *http.Request)
 	_ = json.NewEncoder(rw).Encode(s.userInfoClaims)
 }
 
+func (*oidcTestServer) handleEndSession(rw http.ResponseWriter, _ *http.Request) {
+	rw.WriteHeader(http.StatusOK)
+}
+
 func (s *oidcTestServer) issueIDToken() (string, error) {
 	claims := jwt.MapClaims{
 		"iss": s.issuer,
@@ -205,6 +211,9 @@ func TestLoginURLBuildsSuccessfully(t *testing.T) {
 			t.Fatalf("expected scope %q in %v", expected, scope)
 		}
 	}
+	if parsed.Query().Get("prompt") != "select_account" {
+		t.Fatalf("expected prompt=select_account, got %s", parsed.Query().Get("prompt"))
+	}
 
 	redirectURI := parsed.Query().Get("redirect_uri")
 	if !strings.HasSuffix(redirectURI, "/api/v1/complete/oidc") {
@@ -214,6 +223,35 @@ func TestLoginURLBuildsSuccessfully(t *testing.T) {
 	state := parsed.Query().Get("state")
 	if !strings.HasPrefix(state, "v1.") {
 		t.Fatalf("expected signed state with v1 prefix, got %s", state)
+	}
+}
+
+func TestLogoutURLBuildsSuccessfully(t *testing.T) {
+	testServer := newOIDCTestServer(t, map[string]any{"email": "user@example.com"}, nil)
+	defer testServer.close()
+
+	authDomain := mustNewOIDCDomain(t, testServer.issuer, false)
+	provider := mustNewProvider(t, authDomain)
+
+	siteURL := mustParseURL(t, "https://signoz.local/login")
+
+	logoutURL, err := provider.LogoutURL(context.Background(), siteURL, authDomain)
+	if err != nil {
+		t.Fatalf("expected logout URL, got error: %v", err)
+	}
+
+	parsed := mustParseURL(t, logoutURL)
+	if parsed.Host != strings.TrimPrefix(testServer.issuer, "http://") && parsed.Host != strings.TrimPrefix(testServer.issuer, "https://") {
+		t.Fatalf("expected host to be OIDC provider, got %s", parsed.Host)
+	}
+	if parsed.Path != "/end_session" {
+		t.Fatalf("expected end session path /end_session, got %s", parsed.Path)
+	}
+	if parsed.Query().Get("post_logout_redirect_uri") != "https://signoz.local/login" {
+		t.Fatalf("unexpected post_logout_redirect_uri: %s", parsed.Query().Get("post_logout_redirect_uri"))
+	}
+	if parsed.Query().Get("client_id") != testOIDCClientID {
+		t.Fatalf("unexpected client_id: %s", parsed.Query().Get("client_id"))
 	}
 }
 

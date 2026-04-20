@@ -43,6 +43,23 @@ func (provider *provider) addSessionRoutes(router *mux.Router) error {
 		return err
 	}
 
+	if err := router.Handle("/api/v2/sessions/logout_context", handler.New(provider.authZ.OpenAccess(provider.sessionHandler.GetSessionLogoutContext), handler.OpenAPIDef{
+		ID:                  "GetSessionLogoutContext",
+		Tags:                []string{"sessions"},
+		Summary:             "Get session logout context",
+		Description:         "This endpoint returns the logout context for the current session",
+		Request:             nil,
+		RequestContentType:  "",
+		Response:            new(authtypes.SessionLogoutContext),
+		ResponseContentType: "application/json",
+		SuccessStatusCode:   http.StatusOK,
+		ErrorStatusCodes:    []int{http.StatusBadRequest},
+		Deprecated:          false,
+		SecuritySchemes:     []handler.OpenAPISecurityScheme{{Name: authtypes.IdentNProviderTokenizer.StringValue()}},
+	})).Methods(http.MethodGet).GetError(); err != nil {
+		return err
+	}
+
 	if err := router.Handle("/api/v2/sessions/rotate", handler.New(provider.authZ.OpenAccess(provider.sessionHandler.RotateSession), handler.OpenAPIDef{
 		ID:                  "RotateSession",
 		Tags:                []string{"sessions"},

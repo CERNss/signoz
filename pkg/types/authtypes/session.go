@@ -10,6 +10,10 @@ type SessionContext struct {
 	Orgs   []*OrgSessionContext `json:"orgs"`
 }
 
+type SessionLogoutContext struct {
+	URL string `json:"url"`
+}
+
 type OrgSessionContext struct {
 	ID           valuer.UUID  `json:"id"`
 	Name         string       `json:"name"`
@@ -33,6 +37,10 @@ type PasswordAuthNSupport struct {
 
 func NewSessionContext() *SessionContext {
 	return &SessionContext{Exists: false, Orgs: []*OrgSessionContext{}}
+}
+
+func NewSessionLogoutContext(url string) *SessionLogoutContext {
+	return &SessionLogoutContext{URL: url}
 }
 
 func NewOrgSessionContext(orgID valuer.UUID, name string) *OrgSessionContext {
