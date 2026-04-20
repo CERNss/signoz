@@ -4,7 +4,7 @@ import { Checkbox } from '@signozhq/checkbox';
 import { Style } from '@signozhq/design-tokens';
 import { CircleHelp } from '@signozhq/icons';
 import { Input } from '@signozhq/input';
-import { Form, Tooltip } from 'antd';
+import { Form, Select, Tooltip } from 'antd';
 
 import ClaimMappingSection from './components/ClaimMappingSection';
 import RoleMappingSection from './components/RoleMappingSection';
@@ -142,6 +142,46 @@ function ConfigureOIDCAuthnProvider({
 						</Form.Item>
 					</div>
 
+					<div className="authn-provider__field-group">
+						<label className="authn-provider__label" htmlFor="oidc-scopes">
+							Scopes
+							<Tooltip title='Optional comma/space separated scopes. Defaults to "openid, profile, email".'>
+								<CircleHelp size={14} color={Style.L3_FOREGROUND} cursor="help" />
+							</Tooltip>
+						</label>
+						<Form.Item
+							name={['oidcConfig', 'scopesText']}
+							className="authn-provider__form-item"
+						>
+							<Input id="oidc-scopes" placeholder="openid, profile, email" />
+						</Form.Item>
+					</div>
+
+					<div className="authn-provider__field-group">
+						<label
+							className="authn-provider__label"
+							htmlFor="oidc-email-verified-policy"
+						>
+							Email Verified Policy
+							<Tooltip title='How to handle "email_verified" claim: strict blocks unverified users, warn logs, ignore skips checks.'>
+								<CircleHelp size={14} color={Style.L3_FOREGROUND} cursor="help" />
+							</Tooltip>
+						</label>
+						<Form.Item
+							name={['oidcConfig', 'emailVerifiedPolicy']}
+							className="authn-provider__form-item"
+						>
+							<Select
+								id="oidc-email-verified-policy"
+								options={[
+									{ value: 'warn', label: 'warn (default)' },
+									{ value: 'strict', label: 'strict' },
+									{ value: 'ignore', label: 'ignore' },
+								]}
+							/>
+						</Form.Item>
+					</div>
+
 					<div className="authn-provider__checkbox-row">
 						<Form.Item
 							name={['oidcConfig', 'insecureSkipEmailVerified']}
@@ -160,6 +200,45 @@ function ConfigureOIDCAuthnProvider({
 							/>
 						</Form.Item>
 						<Tooltip title='Whether to skip email verification. Defaults to "false"'>
+							<CircleHelp size={14} color={Style.L3_FOREGROUND} cursor="help" />
+						</Tooltip>
+					</div>
+
+					<div className="authn-provider__checkbox-row">
+						<Form.Item
+							name={['oidcConfig', 'allowJit']}
+							initialValue={true}
+							valuePropName="checked"
+							noStyle
+						>
+							<Checkbox
+								id="oidc-allow-jit"
+								labelName="Auto-create Users (JIT)"
+								onCheckedChange={(checked: boolean): void => {
+									form.setFieldValue(['oidcConfig', 'allowJit'], checked);
+								}}
+							/>
+						</Form.Item>
+						<Tooltip title="When enabled, users are created automatically on first successful SSO login.">
+							<CircleHelp size={14} color={Style.L3_FOREGROUND} cursor="help" />
+						</Tooltip>
+					</div>
+
+					<div className="authn-provider__checkbox-row">
+						<Form.Item
+							name={['oidcConfig', 'enforceEmailDomain']}
+							valuePropName="checked"
+							noStyle
+						>
+							<Checkbox
+								id="oidc-enforce-email-domain"
+								labelName="Enforce Email Domain Match"
+								onCheckedChange={(checked: boolean): void => {
+									form.setFieldValue(['oidcConfig', 'enforceEmailDomain'], checked);
+								}}
+							/>
+						</Form.Item>
+						<Tooltip title="Require callback email domain to match this auth domain name.">
 							<CircleHelp size={14} color={Style.L3_FOREGROUND} cursor="help" />
 						</Tooltip>
 					</div>

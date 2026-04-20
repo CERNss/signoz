@@ -197,7 +197,7 @@ func (r *WhereClauseRewriter) VisitComparison(ctx *parser.ComparisonContext) int
 		if _, partOfGroup := r.groupBySet[key]; partOfGroup {
 			// Case 1: Replace with actual value
 			escapedValue := escapeValueIfNeeded(value)
-			r.rewritten.WriteString(fmt.Sprintf("%s=%s", key, escapedValue))
+			fmt.Fprintf(&r.rewritten, "%s=%s", key, escapedValue)
 			return nil
 		}
 	}

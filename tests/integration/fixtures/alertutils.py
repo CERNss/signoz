@@ -125,6 +125,19 @@ def verify_webhook_alert_expectation(
         logger.info("No alerts fired, as expected")
         return True
 
+    # Do one final poll after timeout to avoid boundary misses when the alert
+    # arrives exactly at the timeout edge.
+    firing_alerts = collect_webhook_firing_alerts(
+        test_alert_container, notification_channel_name
+    )
+    firing_alert_labels = [alert.labels for alert in firing_alerts]
+    (verified_count, missing_alerts) = _verify_alerts_labels(
+        firing_alert_labels, expected_alerts_labels
+    )
+    if verified_count == len(alert_expectations.expected_alerts):
+        logger.info("Got expected number of alerts: %s", {"count": verified_count})
+        return True
+
     # we've waited but we didn't get the expected number of alerts, raise an exception
     assert verified_count == len(alert_expectations.expected_alerts), (
         f"Expected {len(alert_expectations.expected_alerts)} alerts to be fired but got {verified_count} alerts, ",

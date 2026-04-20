@@ -146,21 +146,39 @@ func (module *module) CreateCallbackAuthNSession(ctx context.Context, authNProvi
 	role := roleMapping.NewRoleFromCallbackIdentity(callbackIdentity)
 	signozManagedRole := authtypes.MustGetSigNozManagedRoleFromExistingRole(role)
 
-	newUser, err := types.NewUser(callbackIdentity.Name, callbackIdentity.Email, callbackIdentity.OrgID, types.UserStatusActive)
-	if err != nil {
-		return "", err
+	var signedInUser *types.User
+
+	allowJITProvisioning := true
+	if authDomain.AuthDomainConfig().AuthNProvider == authtypes.AuthNProviderOIDC && authDomain.AuthDomainConfig().OIDC != nil {
+		allowJITProvisioning = authDomain.AuthDomainConfig().OIDC.IsAllowJIT()
 	}
 
-	newUser, err = module.userSetter.GetOrCreateUser(ctx, newUser, user.WithRoleNames([]string{signozManagedRole}))
-	if err != nil {
-		return "", err
+	if allowJITProvisioning {
+		newUser, err := types.NewUser(callbackIdentity.Name, callbackIdentity.Email, callbackIdentity.OrgID, types.UserStatusActive)
+		if err != nil {
+			return "", err
+		}
+
+		signedInUser, err = module.userSetter.GetOrCreateUser(ctx, newUser, user.WithRoleNames([]string{signozManagedRole}))
+		if err != nil {
+			return "", err
+		}
+	} else {
+		signedInUser, err = module.userGetter.GetNonDeletedUserByEmailAndOrgID(ctx, callbackIdentity.Email, callbackIdentity.OrgID)
+		if err != nil {
+			if errors.Ast(err, errors.TypeNotFound) {
+				return "", errors.Newf(errors.TypeForbidden, errors.CodeForbidden, "user %q is not allowed to sign in via SSO", callbackIdentity.Email.StringValue())
+			}
+
+			return "", err
+		}
 	}
 
-	if err := newUser.ErrIfRoot(); err != nil {
+	if err := signedInUser.ErrIfRoot(); err != nil {
 		return "", errors.WithAdditionalf(err, "root user can only authenticate via password")
 	}
 
-	token, err := module.tokenizer.CreateToken(ctx, authtypes.NewPrincipalUserIdentity(newUser.ID, newUser.OrgID, newUser.Email, authtypes.IdentNProviderTokenizer), map[string]string{})
+	token, err := module.tokenizer.CreateToken(ctx, authtypes.NewPrincipalUserIdentity(signedInUser.ID, signedInUser.OrgID, signedInUser.Email, authtypes.IdentNProviderTokenizer), map[string]string{})
 	if err != nil {
 		return "", err
 	}

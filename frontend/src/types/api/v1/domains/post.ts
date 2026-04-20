@@ -29,7 +29,11 @@ export interface OIDCConfig {
 	issuerAlias: string;
 	clientId: string;
 	clientSecret: string;
+	scopes?: string[];
 	claimMapping: ClaimMapping;
+	emailVerifiedPolicy?: string;
+	enforceEmailDomain?: boolean;
+	allowJit?: boolean;
 	insecureSkipEmailVerified: boolean;
 	getUserInfo: boolean;
 }

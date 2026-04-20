@@ -284,12 +284,19 @@ components:
       type: object
     AuthtypesOIDCConfig:
       properties:
+        allowJit:
+          nullable: true
+          type: boolean
         claimMapping:
           $ref: '#/components/schemas/AuthtypesAttributeMapping'
         clientId:
           type: string
         clientSecret:
           type: string
+        emailVerifiedPolicy:
+          type: string
+        enforceEmailDomain:
+          type: boolean
         getUserInfo:
           type: boolean
         insecureSkipEmailVerified:
@@ -298,6 +305,10 @@ components:
           type: string
         issuerAlias:
           type: string
+        scopes:
+          items:
+            type: string
+          type: array
       type: object
     AuthtypesObject:
       properties:

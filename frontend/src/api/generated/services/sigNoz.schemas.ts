@@ -352,6 +352,11 @@ export interface AuthtypesGoogleConfigDTO {
 }
 
 export interface AuthtypesOIDCConfigDTO {
+	/**
+	 * @type boolean
+	 * @nullable true
+	 */
+	allowJit?: boolean | null;
 	claimMapping?: AuthtypesAttributeMappingDTO;
 	/**
 	 * @type string
@@ -361,6 +366,14 @@ export interface AuthtypesOIDCConfigDTO {
 	 * @type string
 	 */
 	clientSecret?: string;
+	/**
+	 * @type string
+	 */
+	emailVerifiedPolicy?: string;
+	/**
+	 * @type boolean
+	 */
+	enforceEmailDomain?: boolean;
 	/**
 	 * @type boolean
 	 */
@@ -377,6 +390,10 @@ export interface AuthtypesOIDCConfigDTO {
 	 * @type string
 	 */
 	issuerAlias?: string;
+	/**
+	 * @type array
+	 */
+	scopes?: string[];
 }
 
 export interface AuthtypesObjectDTO {

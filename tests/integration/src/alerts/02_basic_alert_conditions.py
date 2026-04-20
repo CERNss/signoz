@@ -282,7 +282,10 @@ TEST_RULES_MATCH_TYPE_AND_COMPARE_OPERATORS = [
         ],
         alert_expectation=types.AlertExpectation(
             should_alert=True,
-            wait_time_seconds=30,
+            # This case is more timing-sensitive on slower CI workers because
+            # "all the time" + equality can miss the first evaluation window.
+            # Keep a larger timeout to avoid flaky misses in sqlite+wal matrix.
+            wait_time_seconds=60,
             expected_alerts=[
                 types.FiringAlert(
                     labels={
@@ -642,7 +645,10 @@ def test_basic_alert_rule_conditions(
     # Insert alert data
     insert_alert_data(
         alert_test_case.alert_data,
-        base_time=datetime.now(tz=timezone.utc) - timedelta(minutes=5),
+        # Align to minute boundary to reduce rolling-window edge timing flakiness.
+        base_time=datetime.now(tz=timezone.utc)
+        .replace(second=0, microsecond=0)
+        - timedelta(minutes=5),
     )
 
     # Create Alert Rule

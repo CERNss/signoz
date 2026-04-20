@@ -15,7 +15,9 @@ export interface FormValues {
 		domainToAdminEmailList?: Array<{ domain?: string; adminEmail?: string }>;
 	};
 	samlConfig?: AuthtypesSamlConfigDTO;
-	oidcConfig?: AuthtypesOIDCConfigDTO;
+	oidcConfig?: AuthtypesOIDCConfigDTO & {
+		scopesText?: string;
+	};
 	roleMapping?: AuthtypesRoleMappingDTO & {
 		groupMappingsList?: Array<{ groupName?: string; role?: string }>;
 	};
@@ -98,6 +100,29 @@ export function convertDomainMappingsToList(
 	}));
 }
 
+export function convertScopesStringToArray(
+	scopesText?: string,
+): string[] | undefined {
+	if (!scopesText) {
+		return undefined;
+	}
+
+	const scopes = scopesText
+		.split(/[,\s]+/)
+		.map((scope) => scope.trim())
+		.filter(Boolean);
+
+	return scopes.length > 0 ? scopes : undefined;
+}
+
+export function convertScopesArrayToString(scopes?: string[]): string {
+	if (!Array.isArray(scopes) || scopes.length === 0) {
+		return '';
+	}
+
+	return scopes.join(', ');
+}
+
 /**
  * Prepares initial form values from API record
  */
@@ -120,6 +145,13 @@ export function prepareInitialValues(
 					domainToAdminEmailList: convertDomainMappingsToList(
 						record.googleAuthConfig.domainToAdminEmail,
 					),
+			  }
+			: undefined,
+		oidcConfig: record.oidcConfig
+			? {
+					...record.oidcConfig,
+					scopesText: convertScopesArrayToString(record.oidcConfig.scopes),
+					allowJit: record.oidcConfig.allowJit ?? true,
 			  }
 			: undefined,
 		roleMapping: record.roleMapping

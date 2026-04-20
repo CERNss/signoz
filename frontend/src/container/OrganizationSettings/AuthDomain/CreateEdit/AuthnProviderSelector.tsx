@@ -35,7 +35,7 @@ function getAuthNProviders(samlEnabled: boolean): AuthNProvider[] {
 			description:
 				'Authenticate using OpenID Connect providers like Azure, Active Directory, Okta, or other OIDC compliant solutions',
 			icon: <KeyOutlined style={{ fontSize: '37px' }} />,
-			enabled: samlEnabled,
+			enabled: true,
 		},
 	];
 }
