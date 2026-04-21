@@ -43,6 +43,23 @@ func (provider *provider) addSessionRoutes(router *mux.Router) error {
 		return err
 	}
 
+	if err := router.Handle("/api/v2/sessions/sso_context", handler.New(provider.authZ.OpenAccess(provider.sessionHandler.GetSessionSSOContext), handler.OpenAPIDef{
+		ID:                  "GetSessionSSOContext",
+		Tags:                []string{"sessions"},
+		Summary:             "Get session SSO context",
+		Description:         "This endpoint returns SSO shortcut options for the login page",
+		Request:             nil,
+		RequestContentType:  "",
+		Response:            new(authtypes.SessionSSOContext),
+		ResponseContentType: "application/json",
+		SuccessStatusCode:   http.StatusOK,
+		ErrorStatusCodes:    []int{http.StatusBadRequest},
+		Deprecated:          false,
+		SecuritySchemes:     []handler.OpenAPISecurityScheme{},
+	})).Methods(http.MethodGet).GetError(); err != nil {
+		return err
+	}
+
 	if err := router.Handle("/api/v2/sessions/logout_context", handler.New(provider.authZ.OpenAccess(provider.sessionHandler.GetSessionLogoutContext), handler.OpenAPIDef{
 		ID:                  "GetSessionLogoutContext",
 		Tags:                []string{"sessions"},

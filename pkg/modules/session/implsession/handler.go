@@ -47,6 +47,25 @@ func (handler *handler) GetSessionContext(rw http.ResponseWriter, req *http.Requ
 	render.Success(rw, http.StatusOK, sessionContext)
 }
 
+func (handler *handler) GetSessionSSOContext(rw http.ResponseWriter, req *http.Request) {
+	ctx, cancel := context.WithTimeout(req.Context(), 10*time.Second)
+	defer cancel()
+
+	siteURL, err := url.Parse(req.URL.Query().Get("ref"))
+	if err != nil {
+		render.Error(rw, err)
+		return
+	}
+
+	sessionSSOContext, err := handler.module.GetSessionSSOContext(ctx, siteURL)
+	if err != nil {
+		render.Error(rw, err)
+		return
+	}
+
+	render.Success(rw, http.StatusOK, sessionSSOContext)
+}
+
 func (handler *handler) CreateSessionByEmailPassword(rw http.ResponseWriter, req *http.Request) {
 	ctx, cancel := context.WithTimeout(req.Context(), 15*time.Second)
 	defer cancel()

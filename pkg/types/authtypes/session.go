@@ -10,8 +10,18 @@ type SessionContext struct {
 	Orgs   []*OrgSessionContext `json:"orgs"`
 }
 
+type SessionSSOContext struct {
+	Domains []SSODomainContext `json:"domains"`
+}
+
 type SessionLogoutContext struct {
 	URL string `json:"url"`
+}
+
+type SSODomainContext struct {
+	Domain   string        `json:"domain"`
+	Provider AuthNProvider `json:"provider"`
+	URL      string        `json:"url"`
 }
 
 type OrgSessionContext struct {
@@ -39,6 +49,10 @@ func NewSessionContext() *SessionContext {
 	return &SessionContext{Exists: false, Orgs: []*OrgSessionContext{}}
 }
 
+func NewSessionSSOContext() *SessionSSOContext {
+	return &SessionSSOContext{Domains: []SSODomainContext{}}
+}
+
 func NewSessionLogoutContext(url string) *SessionLogoutContext {
 	return &SessionLogoutContext{URL: url}
 }
@@ -58,6 +72,19 @@ func NewOrgSessionContext(orgID valuer.UUID, name string) *OrgSessionContext {
 func (s *SessionContext) AddOrgContext(orgContext *OrgSessionContext) *SessionContext {
 	s.Orgs = append(s.Orgs, orgContext)
 	return s
+}
+
+func (s *SessionSSOContext) AddSSODomainContext(domainContext SSODomainContext) *SessionSSOContext {
+	s.Domains = append(s.Domains, domainContext)
+	return s
+}
+
+func NewSSODomainContext(domain string, provider AuthNProvider, url string) SSODomainContext {
+	return SSODomainContext{
+		Domain:   domain,
+		Provider: provider,
+		URL:      url,
+	}
 }
 
 func (s *OrgSessionContext) AddPasswordAuthNSupport(provider AuthNProvider) *OrgSessionContext {

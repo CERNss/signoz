@@ -14,6 +14,9 @@ type Module interface {
 	// Gets the session context for the user. The context contains information on what the user has to do in order to create a session.
 	GetSessionContext(ctx context.Context, email valuer.Email, siteURL *url.URL) (*authtypes.SessionContext, error)
 
+	// Gets SSO login options available at the login page.
+	GetSessionSSOContext(ctx context.Context, siteURL *url.URL) (*authtypes.SessionSSOContext, error)
+
 	// Create a session for a user using password authn provider.
 	CreatePasswordAuthNSession(ctx context.Context, authNProvider authtypes.AuthNProvider, email valuer.Email, password string, orgID valuer.UUID) (*authtypes.Token, error)
 
@@ -36,6 +39,9 @@ type Module interface {
 type Handler interface {
 	// Get the session context for the user.
 	GetSessionContext(http.ResponseWriter, *http.Request)
+
+	// Get SSO login options for the login page.
+	GetSessionSSOContext(http.ResponseWriter, *http.Request)
 
 	// Create a session for a user using email and password.
 	CreateSessionByEmailPassword(http.ResponseWriter, *http.Request)

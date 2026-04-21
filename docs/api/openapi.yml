@@ -436,6 +436,15 @@ components:
         useRoleAttribute:
           type: boolean
       type: object
+    AuthtypesSSODomainContext:
+      properties:
+        domain:
+          type: string
+        provider:
+          type: string
+        url:
+          type: string
+      type: object
     AuthtypesSamlConfig:
       properties:
         attributeMapping:
@@ -456,6 +465,19 @@ components:
         orgs:
           items:
             $ref: '#/components/schemas/AuthtypesOrgSessionContext'
+          nullable: true
+          type: array
+      type: object
+    AuthtypesSessionLogoutContext:
+      properties:
+        url:
+          type: string
+      type: object
+    AuthtypesSessionSSOContext:
+      properties:
+        domains:
+          items:
+            $ref: '#/components/schemas/AuthtypesSSODomainContext'
           nullable: true
           type: array
       type: object
@@ -10644,6 +10666,55 @@ paths:
       summary: Create session by email and password
       tags:
       - sessions
+  /api/v2/sessions/logout_context:
+    get:
+      deprecated: false
+      description: This endpoint returns the logout context for the current session
+      operationId: GetSessionLogoutContext
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AuthtypesSessionLogoutContext'
+                  status:
+                    type: string
+                required:
+                - status
+                - data
+                type: object
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenderErrorResponse'
+          description: Bad Request
+        "401":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenderErrorResponse'
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenderErrorResponse'
+          description: Forbidden
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenderErrorResponse'
+          description: Internal Server Error
+      security:
+      - tokenizer: []
+      summary: Get session logout context
+      tags:
+      - sessions
   /api/v2/sessions/rotate:
     post:
       deprecated: false
@@ -10682,6 +10753,41 @@ paths:
                 $ref: '#/components/schemas/RenderErrorResponse'
           description: Internal Server Error
       summary: Rotate session
+      tags:
+      - sessions
+  /api/v2/sessions/sso_context:
+    get:
+      deprecated: false
+      description: This endpoint returns SSO shortcut options for the login page
+      operationId: GetSessionSSOContext
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AuthtypesSessionSSOContext'
+                  status:
+                    type: string
+                required:
+                - status
+                - data
+                type: object
+          description: OK
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenderErrorResponse'
+          description: Bad Request
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RenderErrorResponse'
+          description: Internal Server Error
+      summary: Get session SSO context
       tags:
       - sessions
   /api/v2/users:
