@@ -123,6 +123,12 @@ export default defineConfig(
 				'process.env.TUNNEL_URL': JSON.stringify(env.VITE_TUNNEL_URL),
 				'process.env.TUNNEL_DOMAIN': JSON.stringify(env.VITE_TUNNEL_DOMAIN),
 				'process.env.DOCS_BASE_URL': JSON.stringify(env.VITE_DOCS_BASE_URL),
+				'process.env.NAV_VERSION_OVERRIDE': JSON.stringify(
+					env.VITE_NAV_VERSION_OVERRIDE,
+				),
+				'process.env.NAV_LICENSE_TAG_OVERRIDE': JSON.stringify(
+					env.VITE_NAV_LICENSE_TAG_OVERRIDE,
+				),
 			},
 			build: {
 				sourcemap: true,
