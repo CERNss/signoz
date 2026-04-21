@@ -7,7 +7,84 @@ permissions:
   contents: read
 
 jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend_changed: ${{ steps.detect.outputs.backend_changed }}
+      frontend_changed: ${{ steps.detect.outputs.frontend_changed }}
+      integration_changed: ${{ steps.detect.outputs.integration_changed }}
+      quality_changed: ${{ steps.detect.outputs.quality_changed }}
+      any_business_changed: ${{ steps.detect.outputs.any_business_changed }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+      - name: detect-changed-paths
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
+            CHANGED_FILES="$(git diff --name-only HEAD~1 HEAD)"
+          else
+            # Fallback for shallow/single-commit histories.
+            CHANGED_FILES="$(git ls-files)"
+          fi
+
+          echo "Changed files:"
+          echo "${CHANGED_FILES}"
+
+          BACKEND_CHANGED=false
+          FRONTEND_CHANGED=false
+          INTEGRATION_CHANGED=false
+          QUALITY_CHANGED=false
+
+          while IFS= read -r file; do
+            [[ -z "${file}" ]] && continue
+
+            case "${file}" in
+              frontend/*)
+                FRONTEND_CHANGED=true
+                ;;
+            esac
+
+            case "${file}" in
+              tests/integration/*)
+                INTEGRATION_CHANGED=true
+                ;;
+            esac
+
+            case "${file}" in
+              .github/workflows/*)
+                QUALITY_CHANGED=true
+                ;;
+            esac
+
+            case "${file}" in
+              *.go|go.mod|go.sum|pkg/*|cmd/*|internal/*|docker/*|docs/api/openapi.yml|Makefile)
+                BACKEND_CHANGED=true
+                ;;
+            esac
+          done <<< "${CHANGED_FILES}"
+
+          ANY_BUSINESS_CHANGED=false
+          if [[ "${BACKEND_CHANGED}" == "true" || "${FRONTEND_CHANGED}" == "true" || "${INTEGRATION_CHANGED}" == "true" || "${QUALITY_CHANGED}" == "true" ]]; then
+            ANY_BUSINESS_CHANGED=true
+          fi
+
+          {
+            echo "backend_changed=${BACKEND_CHANGED}"
+            echo "frontend_changed=${FRONTEND_CHANGED}"
+            echo "integration_changed=${INTEGRATION_CHANGED}"
+            echo "quality_changed=${QUALITY_CHANGED}"
+            echo "any_business_changed=${ANY_BUSINESS_CHANGED}"
+          } >> "${GITHUB_OUTPUT}"
+
   refcheck:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.backend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: checkout
@@ -25,6 +102,8 @@ jobs:
           fi
 
   go-test:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.backend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: checkout
@@ -37,6 +116,8 @@ jobs:
         run: go test -race ./...
 
   go-fmt:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.backend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: checkout
@@ -66,6 +147,8 @@ jobs:
           fi
 
   go-lint:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.backend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: checkout
@@ -83,6 +166,8 @@ jobs:
           "$(go env GOPATH)/bin/golangci-lint" run --timeout=10m --new-from-rev=HEAD~1 --whole-files
 
   go-deps:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.backend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: checkout
@@ -98,6 +183,8 @@ jobs:
           git diff --compact-summary --exit-code go.mod go.sum || (echo; echo "Unexpected difference in go.mod/go.sum. Run 'go mod tidy' locally and commit."; exit 1)
 
   go-openapi:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.backend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: checkout
@@ -112,6 +199,8 @@ jobs:
           git diff --compact-summary --exit-code || (echo; echo "Unexpected difference in openapi spec. Run go run cmd/enterprise/*.go generate openapi locally and commit."; exit 1)
 
   js-tsc:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.frontend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: checkout
@@ -144,6 +233,8 @@ jobs:
         run: cd frontend && yarn tsc --noEmit
 
   js-test:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.frontend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: checkout
@@ -176,6 +267,8 @@ jobs:
         run: cd frontend && yarn test --watchAll=false --passWithNoTests
 
   js-fmt:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.frontend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: checkout
@@ -208,6 +301,8 @@ jobs:
         run: cd frontend && yarn fmt
 
   js-lint:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.frontend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: checkout
@@ -240,6 +335,8 @@ jobs:
         run: cd frontend && yarn lint
 
   js-languages:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.frontend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: checkout
@@ -248,6 +345,8 @@ jobs:
         run: bash frontend/scripts/validate-md-languages.sh
 
   js-authz:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.frontend_changed == 'true' || needs['detect-changes'].outputs.integration_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: checkout
@@ -297,6 +396,8 @@ jobs:
           fi
 
   js-openapi:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.frontend_changed == 'true' || needs['detect-changes'].outputs.backend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: checkout
@@ -331,6 +432,8 @@ jobs:
           git diff --compact-summary --exit-code || (echo; echo "Unexpected difference in generated api clients. Run yarn generate:api in frontend/ locally and commit."; exit 1)
 
   integration:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.backend_changed == 'true' || needs['detect-changes'].outputs.frontend_changed == 'true' || needs['detect-changes'].outputs.integration_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

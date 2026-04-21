@@ -5,6 +5,7 @@ import { Style } from '@signozhq/design-tokens';
 import { CircleHelp } from '@signozhq/icons';
 import { Input } from '@signozhq/input';
 import { Form, Select, Tooltip } from 'antd';
+import CopyToClipboard from 'periscope/components/CopyToClipboard';
 
 import ClaimMappingSection from './components/ClaimMappingSection';
 import RoleMappingSection from './components/RoleMappingSection';
@@ -19,6 +20,8 @@ function ConfigureOIDCAuthnProvider({
 	isCreate: boolean;
 }): JSX.Element {
 	const form = Form.useFormInstance();
+	const callbackURL = `${window.location.origin}/api/v1/complete/oidc`;
+	const postLogoutRedirectURL = `${window.location.origin}/login`;
 
 	const [expandedSection, setExpandedSection] = useState<ExpandedSection>(null);
 
@@ -155,6 +158,26 @@ function ConfigureOIDCAuthnProvider({
 						>
 							<Input id="oidc-scopes" placeholder="openid, profile, email" />
 						</Form.Item>
+					</div>
+
+					<div className="authn-provider__field-group">
+						<div className="authn-provider__label">
+							OIDC Callback URL
+							<Tooltip title="Configure this as the redirect URI in your OIDC provider settings.">
+								<CircleHelp size={14} color={Style.L3_FOREGROUND} cursor="help" />
+							</Tooltip>
+						</div>
+						<CopyToClipboard textToCopy={callbackURL} />
+					</div>
+
+					<div className="authn-provider__field-group">
+						<div className="authn-provider__label">
+							Post Logout Redirect URI
+							<Tooltip title="Configure this in your provider's allowed post logout redirect URIs.">
+								<CircleHelp size={14} color={Style.L3_FOREGROUND} cursor="help" />
+							</Tooltip>
+						</div>
+						<CopyToClipboard textToCopy={postLogoutRedirectURL} />
 					</div>
 
 					<div className="authn-provider__field-group">

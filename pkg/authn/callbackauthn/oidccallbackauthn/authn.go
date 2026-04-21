@@ -23,10 +23,12 @@ import (
 
 const (
 	redirectPath          string = "/api/v1/complete/oidc"
+	postLogoutPath        string = "/login"
 	stateSignatureVersion string = "v1"
 )
 
 var _ authn.CallbackAuthN = (*AuthN)(nil)
+var _ authn.LogoutURLProvider = (*AuthN)(nil)
 
 type AuthN struct {
 	settings   factory.ScopedProviderSettings
@@ -64,7 +66,7 @@ func (a *AuthN) LoginURL(ctx context.Context, siteURL *url.URL, authDomain *auth
 		return "", err
 	}
 
-	return oauth2Config.AuthCodeURL(state), nil
+	return oauth2Config.AuthCodeURL(state, oauth2.SetAuthURLParam("prompt", "select_account")), nil
 }
 
 func (a *AuthN) HandleCallback(ctx context.Context, query url.Values) (*authtypes.CallbackIdentity, error) {
@@ -195,6 +197,49 @@ func (a *AuthN) ProviderInfo(context.Context, *authtypes.AuthDomain) *authtypes.
 	return &authtypes.AuthNProviderInfo{
 		RelayStatePath: nil,
 	}
+}
+
+func (a *AuthN) LogoutURL(ctx context.Context, siteURL *url.URL, authDomain *authtypes.AuthDomain) (string, error) {
+	if authDomain.AuthDomainConfig().AuthNProvider != authtypes.AuthNProviderOIDC {
+		return "", errors.Newf(errors.TypeInternal, authtypes.ErrCodeAuthDomainMismatch, "domain type is not oidc")
+	}
+	if siteURL == nil || siteURL.Scheme == "" || siteURL.Host == "" {
+		return "", errors.New(errors.TypeInvalidInput, errors.CodeInvalidInput, "oidc: invalid site URL for logout")
+	}
+
+	oidcProvider, _, err := a.oidcProviderAndOAuth2Config(ctx, siteURL, authDomain)
+	if err != nil {
+		return "", err
+	}
+
+	metadata := struct {
+		EndSessionEndpoint string `json:"end_session_endpoint"`
+	}{}
+	if err := oidcProvider.Claims(&metadata); err != nil {
+		return "", errors.Newf(errors.TypeInternal, errors.CodeInternal, "oidc: failed to decode provider metadata").WithAdditional(err.Error())
+	}
+
+	if metadata.EndSessionEndpoint == "" {
+		return "", nil
+	}
+
+	endSessionURL, err := url.Parse(metadata.EndSessionEndpoint)
+	if err != nil {
+		return "", errors.Newf(errors.TypeInvalidInput, errors.CodeInvalidInput, "oidc: invalid end_session endpoint").WithAdditional(err.Error())
+	}
+
+	postLogoutRedirectURI := (&url.URL{
+		Scheme: siteURL.Scheme,
+		Host:   siteURL.Host,
+		Path:   postLogoutPath,
+	}).String()
+
+	query := endSessionURL.Query()
+	query.Set("post_logout_redirect_uri", postLogoutRedirectURI)
+	query.Set("client_id", authDomain.AuthDomainConfig().OIDC.ClientID)
+	endSessionURL.RawQuery = query.Encode()
+
+	return endSessionURL.String(), nil
 }
 
 func (a *AuthN) oidcProviderAndOAuth2Config(ctx context.Context, siteURL *url.URL, authDomain *authtypes.AuthDomain) (*oidc.Provider, *oauth2.Config, error) {

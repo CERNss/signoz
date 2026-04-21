@@ -111,6 +111,76 @@ func (module *module) GetSessionContext(ctx context.Context, email valuer.Email,
 	return context, nil
 }
 
+func (module *module) GetSessionSSOContext(ctx context.Context, siteURL *url.URL) (*authtypes.SessionSSOContext, error) {
+	context := authtypes.NewSessionSSOContext()
+
+	orgs, err := module.orgGetter.ListByOwnedKeyRange(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, org := range orgs {
+		authDomains, err := module.authDomain.ListByOrgID(ctx, org.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, authDomain := range authDomains {
+			if !authDomain.AuthDomainConfig().SSOEnabled {
+				continue
+			}
+
+			provider, err := getProvider[authn.CallbackAuthN](authDomain.AuthDomainConfig().AuthNProvider, module.authNs)
+			if err != nil {
+				module.settings.Logger().WarnContext(
+					ctx,
+					"failed to resolve callback authn provider for sso shortcut",
+					errors.Attr(err),
+					slog.Any("authn_provider", authDomain.AuthDomainConfig().AuthNProvider),
+					slog.String("domain", authDomain.StorableAuthDomain().Name),
+					slog.String("org_id", org.ID.StringValue()),
+				)
+				continue
+			}
+
+			loginURL, err := provider.LoginURL(ctx, siteURL, authDomain)
+			if err != nil {
+				module.settings.Logger().WarnContext(
+					ctx,
+					"failed to compute sso shortcut login URL",
+					errors.Attr(err),
+					slog.Any("authn_provider", authDomain.AuthDomainConfig().AuthNProvider),
+					slog.String("domain", authDomain.StorableAuthDomain().Name),
+					slog.String("org_id", org.ID.StringValue()),
+				)
+				continue
+			}
+
+			context = context.AddSSODomainContext(
+				authtypes.NewSSODomainContext(
+					authDomain.StorableAuthDomain().Name,
+					authDomain.AuthDomainConfig().AuthNProvider,
+					loginURL,
+				),
+			)
+		}
+	}
+
+	slices.SortFunc(context.Domains, func(a, b authtypes.SSODomainContext) int {
+		if cmp := strings.Compare(a.Domain, b.Domain); cmp != 0 {
+			return cmp
+		}
+
+		if cmp := strings.Compare(a.Provider.StringValue(), b.Provider.StringValue()); cmp != 0 {
+			return cmp
+		}
+
+		return strings.Compare(a.URL, b.URL)
+	})
+
+	return context, nil
+}
+
 func (module *module) CreatePasswordAuthNSession(ctx context.Context, authNProvider authtypes.AuthNProvider, email valuer.Email, password string, orgID valuer.UUID) (*authtypes.Token, error) {
 	passwordAuthN, err := getProvider[authn.PasswordAuthN](authNProvider, module.authNs)
 	if err != nil {
@@ -199,6 +269,51 @@ func (module *module) RotateSession(ctx context.Context, accessToken string, ref
 
 func (module *module) DeleteSession(ctx context.Context, accessToken string) error {
 	return module.tokenizer.DeleteToken(ctx, accessToken)
+}
+
+func (module *module) GetSessionLogoutContext(ctx context.Context, siteURL *url.URL) (*authtypes.SessionLogoutContext, error) {
+	claims, err := authtypes.ClaimsFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	email, err := valuer.NewEmail(claims.Email)
+	if err != nil {
+		return nil, err
+	}
+
+	orgID, err := valuer.NewUUID(claims.OrgID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Since email is a valuer, we can safely split to retrieve the domain.
+	name := strings.Split(email.String(), "@")[1]
+	authDomain, err := module.authDomain.GetByNameAndOrgID(ctx, name, orgID)
+	if err != nil {
+		if errors.Ast(err, errors.TypeNotFound) {
+			return authtypes.NewSessionLogoutContext(""), nil
+		}
+
+		return nil, err
+	}
+
+	if !authDomain.AuthDomainConfig().SSOEnabled {
+		return authtypes.NewSessionLogoutContext(""), nil
+	}
+
+	logoutProvider, ok := module.authNs[authDomain.AuthDomainConfig().AuthNProvider].(authn.LogoutURLProvider)
+	if !ok {
+		return authtypes.NewSessionLogoutContext(""), nil
+	}
+
+	logoutURL, err := logoutProvider.LogoutURL(ctx, siteURL, authDomain)
+	if err != nil {
+		module.settings.Logger().WarnContext(ctx, "failed to compute provider logout URL", errors.Attr(err), slog.Any("authn_provider", authDomain.AuthDomainConfig().AuthNProvider))
+		return authtypes.NewSessionLogoutContext(""), nil
+	}
+
+	return authtypes.NewSessionLogoutContext(logoutURL), nil
 }
 
 func (module *module) GetRotationInterval(context.Context) time.Duration {

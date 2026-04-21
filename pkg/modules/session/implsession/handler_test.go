@@ -16,10 +16,20 @@ import (
 
 type mockSessionModule struct {
 	createCallbackAuthNSession func(context.Context, authtypes.AuthNProvider, url.Values) (string, error)
+	getSessionSSOContext       func(context.Context, *url.URL) (*authtypes.SessionSSOContext, error)
+	getSessionLogoutContext    func(context.Context, *url.URL) (*authtypes.SessionLogoutContext, error)
 }
 
 func (m *mockSessionModule) GetSessionContext(context.Context, valuer.Email, *url.URL) (*authtypes.SessionContext, error) {
 	return nil, errors.New(errors.TypeUnsupported, errors.CodeUnsupported, "not implemented")
+}
+
+func (m *mockSessionModule) GetSessionSSOContext(ctx context.Context, siteURL *url.URL) (*authtypes.SessionSSOContext, error) {
+	if m.getSessionSSOContext == nil {
+		return nil, errors.New(errors.TypeUnsupported, errors.CodeUnsupported, "not implemented")
+	}
+
+	return m.getSessionSSOContext(ctx, siteURL)
 }
 
 func (m *mockSessionModule) CreatePasswordAuthNSession(context.Context, authtypes.AuthNProvider, valuer.Email, string, valuer.UUID) (*authtypes.Token, error) {
@@ -40,6 +50,14 @@ func (m *mockSessionModule) RotateSession(context.Context, string, string) (*aut
 
 func (m *mockSessionModule) DeleteSession(context.Context, string) error {
 	return errors.New(errors.TypeUnsupported, errors.CodeUnsupported, "not implemented")
+}
+
+func (m *mockSessionModule) GetSessionLogoutContext(ctx context.Context, siteURL *url.URL) (*authtypes.SessionLogoutContext, error) {
+	if m.getSessionLogoutContext == nil {
+		return nil, errors.New(errors.TypeUnsupported, errors.CodeUnsupported, "not implemented")
+	}
+
+	return m.getSessionLogoutContext(ctx, siteURL)
 }
 
 func (*mockSessionModule) GetRotationInterval(context.Context) time.Duration {
@@ -101,5 +119,61 @@ func TestCreateSessionByOIDCCallbackRedirectsToLoginOnError(t *testing.T) {
 	}
 	if !strings.Contains(location, "code=forbidden") {
 		t.Fatalf("expected error code in redirect, got %s", location)
+	}
+}
+
+func TestGetSessionSSOContextReturnsDomains(t *testing.T) {
+	h := &handler{module: &mockSessionModule{
+		getSessionSSOContext: func(_ context.Context, siteURL *url.URL) (*authtypes.SessionSSOContext, error) {
+			if siteURL == nil {
+				t.Fatalf("expected siteURL to be forwarded")
+			}
+			if siteURL.Host != "signoz.local" {
+				t.Fatalf("unexpected siteURL host: %s", siteURL.Host)
+			}
+
+			return authtypes.NewSessionSSOContext().AddSSODomainContext(
+				authtypes.NewSSODomainContext(
+					"signoz.io",
+					authtypes.AuthNProviderOIDC,
+					"https://issuer.local/auth?client_id=abc",
+				),
+			), nil
+		},
+	}}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/sessions/sso_context?ref=https://signoz.local/login", nil)
+	rw := httptest.NewRecorder()
+
+	h.GetSessionSSOContext(rw, req)
+
+	resp := rw.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestGetSessionLogoutContextReturnsURL(t *testing.T) {
+	h := &handler{module: &mockSessionModule{
+		getSessionLogoutContext: func(_ context.Context, siteURL *url.URL) (*authtypes.SessionLogoutContext, error) {
+			if siteURL == nil {
+				t.Fatalf("expected siteURL to be forwarded")
+			}
+			if siteURL.Host != "signoz.local" {
+				t.Fatalf("unexpected siteURL host: %s", siteURL.Host)
+			}
+
+			return authtypes.NewSessionLogoutContext("https://issuer.local/end_session?post_logout_redirect_uri=https%3A%2F%2Fsignoz.local%2Flogin"), nil
+		},
+	}}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/sessions/logout_context?ref=https://signoz.local/login", nil)
+	rw := httptest.NewRecorder()
+
+	h.GetSessionLogoutContext(rw, req)
+
+	resp := rw.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", resp.StatusCode)
 	}
 }
