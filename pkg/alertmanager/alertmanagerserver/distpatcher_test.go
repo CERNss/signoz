@@ -119,7 +119,8 @@ func TestAggrGroup(t *testing.T) {
 
 	ntfy := func(ctx context.Context, alerts ...*alertmanagertypes.Alert) bool {
 		// Validate that the context is properly populated.
-		if _, ok := notify.Now(ctx); !ok {
+		n, ok := notify.Now(ctx)
+		if !ok {
 			t.Errorf("now missing")
 		}
 		if _, ok := notify.GroupKey(ctx); !ok {
@@ -137,8 +138,7 @@ func TestAggrGroup(t *testing.T) {
 
 		lastCurMtx.Lock()
 		last = current
-		// Subtract a millisecond to allow for races.
-		current = time.Now().Add(-time.Millisecond)
+		current = n
 		lastCurMtx.Unlock()
 
 		alertsCh <- alertmanagertypes.AlertSlice(alerts)
