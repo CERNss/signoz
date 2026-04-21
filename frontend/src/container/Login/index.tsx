@@ -423,33 +423,34 @@ function Login(): JSX.Element {
 				{errorMessage && <AuthError error={errorMessage} />}
 
 				<div className="login-form-actions">
-					{!sessionsContext && (sessionSSOContext?.domains?.length ?? 0) > 0 && (
-						<div className="login-sso-shortcuts">
-							{sessionSSOContext?.domains.map((ssoDomain) => (
-								<Button
-									key={`${ssoDomain.domain}-${ssoDomain.url}`}
-									variant="outlined"
-									onClick={(): void => handleSSOShortcutClick(ssoDomain.url)}
-									testId={`sso_shortcut_${ssoDomain.domain.replace(/\./g, '_')}`}
-									className="login-sso-shortcut-btn"
-								>
-									{`Sign in with ${ssoDomain.domain}`}
-								</Button>
-							))}
-						</div>
-					)}
-
 					{!sessionsContext && (
-						<Button
-							disabled={!isNextButtonEnabled}
-							variant="solid"
-							onClick={onNextHandler}
-							testId="initiate_login"
-							className="login-submit-btn"
-							suffix={<ArrowRight />}
-						>
-							Next
-						</Button>
+						<>
+							<Button
+								disabled={!isNextButtonEnabled}
+								variant="solid"
+								onClick={onNextHandler}
+								testId="initiate_login"
+								className="login-submit-btn"
+								suffix={<ArrowRight />}
+							>
+								Next
+							</Button>
+							{(sessionSSOContext?.domains?.length ?? 0) > 0 && (
+								<div className="login-sso-shortcuts">
+									{sessionSSOContext?.domains.map((ssoDomain) => (
+										<Button
+											key={`${ssoDomain.domain}-${ssoDomain.url}`}
+											variant="outlined"
+											onClick={(): void => handleSSOShortcutClick(ssoDomain.url)}
+											testId={`sso_shortcut_${ssoDomain.domain.replace(/\./g, '_')}`}
+											className="login-sso-shortcut-btn"
+										>
+											{`Sign in with ${ssoDomain.domain}`}
+										</Button>
+									))}
+								</div>
+							)}
+						</>
 					)}
 
 					{sessionsContext && isCallbackAuthN && (
