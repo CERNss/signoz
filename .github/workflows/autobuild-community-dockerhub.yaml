@@ -82,7 +82,7 @@ jobs:
         id: meta
         shell: bash
         env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME }}
           DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
         run: |
           set -euo pipefail
@@ -91,7 +91,7 @@ jobs:
             IMAGE="${DOCKERHUB_IMAGE}"
           else
             if [[ -z "${DOCKERHUB_USERNAME}" ]]; then
-              echo "DOCKERHUB_USERNAME secret is required when DOCKERHUB_IMAGE variable is not set"
+              echo "DOCKERHUB_USERNAME secret or variable is required when DOCKERHUB_IMAGE variable is not set"
               exit 1
             fi
             IMAGE="${DOCKERHUB_USERNAME}/signoz-community"
@@ -373,7 +373,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: docker.io
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          username: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: resolve-image-tags
@@ -381,7 +381,7 @@ jobs:
         shell: bash
         env:
           UPSTREAM_TAGS: ${{ needs.init.outputs.tags }}
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME }}
           DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
         run: |
           set -euo pipefail
@@ -392,7 +392,7 @@ jobs:
               IMAGE="${DOCKERHUB_IMAGE}"
             else
               if [[ -z "${DOCKERHUB_USERNAME}" ]]; then
-                echo "DOCKERHUB_USERNAME secret is required when DOCKERHUB_IMAGE variable is not set"
+                echo "DOCKERHUB_USERNAME secret or variable is required when DOCKERHUB_IMAGE variable is not set"
                 exit 1
               fi
               IMAGE="${DOCKERHUB_USERNAME}/signoz-community"
@@ -482,7 +482,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: docker.io
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          username: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: resolve-image-tags
@@ -490,7 +490,7 @@ jobs:
         shell: bash
         env:
           UPSTREAM_TAGS: ${{ needs.init.outputs.tags }}
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME || vars.DOCKERHUB_USERNAME }}
           DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE }}
         run: |
           set -euo pipefail
@@ -501,7 +501,7 @@ jobs:
               IMAGE="${DOCKERHUB_IMAGE}"
             else
               if [[ -z "${DOCKERHUB_USERNAME}" ]]; then
-                echo "DOCKERHUB_USERNAME secret is required when DOCKERHUB_IMAGE variable is not set"
+                echo "DOCKERHUB_USERNAME secret or variable is required when DOCKERHUB_IMAGE variable is not set"
                 exit 1
               fi
               IMAGE="${DOCKERHUB_USERNAME}/signoz-community"
