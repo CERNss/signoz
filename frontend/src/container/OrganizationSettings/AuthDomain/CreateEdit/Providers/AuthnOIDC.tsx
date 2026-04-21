@@ -161,26 +161,6 @@ function ConfigureOIDCAuthnProvider({
 					</div>
 
 					<div className="authn-provider__field-group">
-						<div className="authn-provider__label">
-							OIDC Callback URL
-							<Tooltip title="Configure this as the redirect URI in your OIDC provider settings.">
-								<CircleHelp size={14} color={Style.L3_FOREGROUND} cursor="help" />
-							</Tooltip>
-						</div>
-						<CopyToClipboard textToCopy={callbackURL} />
-					</div>
-
-					<div className="authn-provider__field-group">
-						<div className="authn-provider__label">
-							Post Logout Redirect URI
-							<Tooltip title="Configure this in your provider's allowed post logout redirect URIs.">
-								<CircleHelp size={14} color={Style.L3_FOREGROUND} cursor="help" />
-							</Tooltip>
-						</div>
-						<CopyToClipboard textToCopy={postLogoutRedirectURL} />
-					</div>
-
-					<div className="authn-provider__field-group">
 						<label
 							className="authn-provider__label"
 							htmlFor="oidc-email-verified-policy"
@@ -296,6 +276,28 @@ function ConfigureOIDCAuthnProvider({
 
 				{/* Right Column - Advanced Settings */}
 				<div className="authn-provider__right">
+					<div className="authn-provider__copy-links">
+						<div className="authn-provider__field-group">
+							<div className="authn-provider__label">
+								OIDC Callback URL
+								<Tooltip title="Configure this as the redirect URI in your OIDC provider settings.">
+									<CircleHelp size={14} color={Style.L3_FOREGROUND} cursor="help" />
+								</Tooltip>
+							</div>
+							<CopyToClipboard textToCopy={callbackURL} />
+						</div>
+
+						<div className="authn-provider__field-group">
+							<div className="authn-provider__label">
+								Post Logout Redirect URI
+								<Tooltip title="Configure this in your provider's allowed post logout redirect URIs.">
+									<CircleHelp size={14} color={Style.L3_FOREGROUND} cursor="help" />
+								</Tooltip>
+							</div>
+							<CopyToClipboard textToCopy={postLogoutRedirectURL} />
+						</div>
+					</div>
+
 					<ClaimMappingSection
 						fieldNamePrefix={['oidcConfig', 'claimMapping']}
 						isExpanded={expandedSection === 'claim-mapping'}

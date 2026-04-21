@@ -54,6 +54,19 @@
 		flex-direction: column;
 	}
 
+	&__copy-links {
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+		margin-bottom: 20px;
+		padding-bottom: 16px;
+		border-bottom: 1px solid var(--l3-border);
+
+		.authn-provider__field-group {
+			margin-bottom: 0;
+		}
+	}
+
 	&__field-group {
 		display: flex;
 		flex-direction: column;
