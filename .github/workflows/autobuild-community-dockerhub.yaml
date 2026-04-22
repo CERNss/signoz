@@ -236,8 +236,9 @@ jobs:
           : "${NEXUS_USERNAME:?NEXUS_USERNAME is required}"
           : "${NEXUS_PASSWORD:?NEXUS_PASSWORD is required}"
 
-          ARTIFACT_PREFIX="${NEXUS_ARTIFACT_PREFIX:-signoz/community-build}"
-          ARTIFACT_PATH="${ARTIFACT_PREFIX}/${GITHUB_RUN_ID}/community-build.tar.gz"
+          ARTIFACT_PREFIX="${NEXUS_ARTIFACT_PREFIX:-infra/signoz/community-build}"
+          ARTIFACT_PREFIX="${ARTIFACT_PREFIX%/}"
+          ARTIFACT_PATH="${ARTIFACT_PREFIX}/${GITHUB_RUN_ID}.tar.gz"
           NEXUS_UPLOAD_URL="${NEXUS_URL%/}/repository/${NEXUS_REPOSITORY}/${ARTIFACT_PATH}"
 
           curl -fS --retry 3 --retry-all-errors \
@@ -318,8 +319,9 @@ jobs:
           : "${NEXUS_USERNAME:?NEXUS_USERNAME is required}"
           : "${NEXUS_PASSWORD:?NEXUS_PASSWORD is required}"
 
-          ARTIFACT_PREFIX="${NEXUS_ARTIFACT_PREFIX:-signoz/community-build}"
-          ARTIFACT_PATH="${ARTIFACT_PREFIX}/${GITHUB_RUN_ID}/community-build.tar.gz"
+          ARTIFACT_PREFIX="${NEXUS_ARTIFACT_PREFIX:-infra/signoz/community-build}"
+          ARTIFACT_PREFIX="${ARTIFACT_PREFIX%/}"
+          ARTIFACT_PATH="${ARTIFACT_PREFIX}/${GITHUB_RUN_ID}.tar.gz"
           NEXUS_UPLOAD_URL="${NEXUS_URL%/}/repository/${NEXUS_REPOSITORY}/${ARTIFACT_PATH}"
 
           curl -fS --retry 3 --retry-all-errors \
@@ -358,8 +360,9 @@ jobs:
           : "${NEXUS_USERNAME:?NEXUS_USERNAME is required}"
           : "${NEXUS_PASSWORD:?NEXUS_PASSWORD is required}"
 
-          ARTIFACT_PREFIX="${NEXUS_ARTIFACT_PREFIX:-signoz/community-build}"
-          ARTIFACT_PATH="${ARTIFACT_PREFIX}/${GITHUB_RUN_ID}/community-build.tar.gz"
+          ARTIFACT_PREFIX="${NEXUS_ARTIFACT_PREFIX:-infra/signoz/community-build}"
+          ARTIFACT_PREFIX="${ARTIFACT_PREFIX%/}"
+          ARTIFACT_PATH="${ARTIFACT_PREFIX}/${GITHUB_RUN_ID}.tar.gz"
           NEXUS_DOWNLOAD_URL="${NEXUS_URL%/}/repository/${NEXUS_REPOSITORY}/${ARTIFACT_PATH}"
 
           rm -f community-build.tar.gz
@@ -467,8 +470,9 @@ jobs:
           : "${NEXUS_USERNAME:?NEXUS_USERNAME is required}"
           : "${NEXUS_PASSWORD:?NEXUS_PASSWORD is required}"
 
-          ARTIFACT_PREFIX="${NEXUS_ARTIFACT_PREFIX:-signoz/community-build}"
-          ARTIFACT_PATH="${ARTIFACT_PREFIX}/${GITHUB_RUN_ID}/community-build.tar.gz"
+          ARTIFACT_PREFIX="${NEXUS_ARTIFACT_PREFIX:-infra/signoz/community-build}"
+          ARTIFACT_PREFIX="${ARTIFACT_PREFIX%/}"
+          ARTIFACT_PATH="${ARTIFACT_PREFIX}/${GITHUB_RUN_ID}.tar.gz"
           NEXUS_DOWNLOAD_URL="${NEXUS_URL%/}/repository/${NEXUS_REPOSITORY}/${ARTIFACT_PATH}"
 
           rm -f community-build.tar.gz
