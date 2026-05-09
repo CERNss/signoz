@@ -1,244 +1,140 @@
-<h1 align="center" style="border-bottom: none">
-    <a href="https://signoz.io" target="_blank">
-        <img alt="SigNoz" src="https://github.com/user-attachments/assets/ef9a33f7-12d7-4c94-8908-0a02b22f0c18" width="100" height="100">
-    </a>
-    <br>SigNoz
-</h1>
+# SigNoz Docker 镜像依赖加固说明
 
-<p align="center">All your logs, metrics, and traces in one place. Monitor your application, spot issues before they occur and troubleshoot downtime quickly with rich context. SigNoz is a cost-effective open-source alternative to Datadog and New Relic. Visit <a href="https://signoz.io" target="_blank">signoz.io</a> for the full documentation, tutorials, and guide.</p>
+本文说明 commit `400ea5b4c` 中 Dockerfile 的调整内容、OpenSpec 依据、实际效果和验证情况。
 
-<p align="center">
-    <img alt="GitHub issues" src="https://img.shields.io/github/issues/signoz/signoz"> </a>
-    <a href="https://twitter.com/intent/tweet?text=Monitor%20your%20applications%20and%20troubleshoot%20problems%20with%20SigNoz,%20an%20open-source%20alternative%20to%20DataDog,%20NewRelic.&url=https://signoz.io/&via=SigNozHQ&hashtags=opensource,signoz,observability"> 
-        <img alt="tweet" src="https://img.shields.io/twitter/url/http/shields.io.svg?style=social"> </a> 
-</p>
-  
-  
-<h3 align="center">
-  <a href="https://signoz.io/docs"><b>Documentation</b></a> &bull;
-  <a href="https://github.com/SigNoz/signoz/blob/main/README.zh-cn.md"><b>ReadMe in Chinese</b></a> &bull;
-  <a href="https://github.com/SigNoz/signoz/blob/main/README.de-de.md"><b>ReadMe in German</b></a> &bull;
-  <a href="https://github.com/SigNoz/signoz/blob/main/README.pt-br.md"><b>ReadMe in Portuguese</b></a> &bull;
-  <a href="https://signoz.io/slack"><b>Slack Community</b></a> &bull;
-  <a href="https://twitter.com/SigNozHq"><b>Twitter</b></a>
-</h3>
+## OpenSpec 依据
 
-## Features
+当前仓库没有未完成的 OpenSpec change；与本次改动最相关的是已归档并同步到主规格的：
 
+- `openspec/specs/community-autobuild-action-runner/spec.md`
+- 需求：`Community Dockerfile SHALL use digest-pinned base image`
 
-### Application Performance Monitoring
+该规格要求社区镜像构建使用 `alpine@sha256:<digest>` 作为基础镜像，并由 workflow 将解析出的
+Alpine digest 通过 `ALPINE_SHA` build arg 传给 Dockerfile。归档设计中也说明了这样做的目的：
+让社区镜像基础层更确定，减少基础镜像漂移和供应链歧义。
 
-Use SigNoz APM to monitor your applications and services. It comes with out-of-box charts for key application metrics like p99 latency, error rate, Apdex and operations per second. You can also monitor the database and external calls made from your application. Read [more](https://signoz.io/application-performance-monitoring/).
+本次 README 按这个 OpenSpec 说明社区镜像相关变更；enterprise Dockerfile 的改动属于同类构建稳定性
+扩展，不是该 OpenSpec 规格的直接要求。
 
-You can [instrument](https://signoz.io/docs/instrumentation/) your application with OpenTelemetry to get started.
+## 变更文件
 
-![apm-cover](https://github.com/user-attachments/assets/fa5c0396-0854-4c8b-b972-9b62fd2a70d2)
+| 文件 | 与 OpenSpec 的关系 | 本次改动 |
+| --- | --- | --- |
+| `cmd/community/Dockerfile` | 直接相关 | 设置真实 `ALPINE_SHA` 默认 digest，并加固 CA 证书安装 |
+| `cmd/community/Dockerfile.multi-arch` | 同策略扩展 | 设置真实 `ALPINE_SHA` 默认 digest，并加固 CA 证书安装 |
+| `cmd/enterprise/Dockerfile` | 额外稳定性扩展 | 保持 `alpine:3.20.3`，加固 CA 证书安装 |
+| `cmd/enterprise/Dockerfile.multi-arch` | 额外稳定性扩展 | 设置真实 `ALPINE_SHA` 默认 digest，并加固 CA 证书安装 |
 
+## 改了什么
 
-### Logs Management
+### 1. 将部分 Dockerfile 的 Alpine digest 默认值从占位符改为真实值
 
-SigNoz can be used as a centralized log management solution. We use ClickHouse (used by likes of Uber & Cloudflare) as a datastore, ⎯ an extremely fast and highly optimized storage for logs data. Instantly search through all your logs using quick filters and a powerful query builder.
+以下 Dockerfile 现在提供真实的 `ALPINE_SHA` 默认值：
 
-You can also create charts on your logs and monitor them with customized dashboards. Read [more](https://signoz.io/log-management/).
+- `cmd/community/Dockerfile`
+- `cmd/community/Dockerfile.multi-arch`
+- `cmd/enterprise/Dockerfile.multi-arch`
 
-![logs-management-cover](https://github.com/user-attachments/assets/343588ee-98fb-4310-b3d2-c5bacf9c7384)
+当前默认值为：
 
+```dockerfile
+ARG ALPINE_SHA="1e42bbe2508154c9126d48c2b8a75420c3544343bf86fd041fb7527e017a4b4a"
+```
 
-### Distributed Tracing
+此前默认值是占位符：
 
-Distributed Tracing is essential to troubleshoot issues in microservices applications. Powered by OpenTelemetry, distributed tracing in SigNoz can help you track user requests across services to help you identify performance bottlenecks. 
+```dockerfile
+ARG ALPINE_SHA="pass-a-valid-docker-sha-otherwise-this-will-fail"
+```
 
-See user requests in a detailed breakdown with the help of Flamegraphs and Gantt Charts. Click on any span to see the entire trace represented beautifully, which will help you make sense of where issues actually occurred in the flow of requests.
+效果是：本地或非 workflow 构建时，如果没有显式传入 `ALPINE_SHA`，这些 Dockerfile 也能使用一个
+确定的 Alpine digest，而不是因为占位符直接失败。
 
-Read [more](https://signoz.io/distributed-tracing/).
+### 2. 将 CA 证书安装改为 `apk add --no-cache ca-certificates-bundle`
 
-![distributed-tracing-cover](https://github.com/user-attachments/assets/9bfe060a-0c40-4922-9b55-8a97e1a4076c)
+四个 Dockerfile 都不再使用下面这种写法：
 
+```dockerfile
+RUN apk update && \
+    apk add ca-certificates && \
+    rm -rf /var/cache/apk/*
+```
 
+现在改为安装 Alpine 的 CA bundle：
 
-### Metrics and Dashboards
+```dockerfile
+apk add --no-cache ca-certificates-bundle
+```
 
-Ingest metrics from your infrastructure or applications and create customized dashboards to monitor them. Create visualization that suits your needs with a variety of panel types like pie chart, time-series, bar chart, etc.
+`--no-cache` 会避免把 APK index 写进镜像层，因此不再需要手动清理 `/var/cache/apk/*`。
 
-Create queries on your metrics data quickly with an easy-to-use metrics query builder. Add multiple queries and combine those queries with formulae to create really complex queries quickly.
+### 3. 给 APK 安装增加重试
 
-Read [more](https://signoz.io/metrics-and-dashboards/).
+四个 Dockerfile 都为 APK 安装增加了最多 3 次重试：
 
-![metrics-n-dashboards-cover](https://github.com/user-attachments/assets/a536fd71-1d2c-4681-aa7e-516d754c47a5)
+```dockerfile
+RUN set -eu; \
+    attempt=1; \
+    max=3; \
+    until apk add --no-cache ca-certificates-bundle; do \
+        if [ "${attempt}" -ge "${max}" ]; then \
+            echo "apk add failed after ${max} attempts"; \
+            exit 1; \
+        fi; \
+        sleep_time=$((attempt * 5)); \
+        echo "apk add failed (attempt ${attempt}/${max}), retrying in ${sleep_time}s..."; \
+        sleep "${sleep_time}"; \
+        attempt=$((attempt + 1)); \
+    done
+```
 
-### LLM Observability
+重试等待时间为：
 
-Monitor and debug your LLM applications with comprehensive observability. Track LLM calls, analyze token usage, monitor performance, and gain insights into your AI application's behavior in production.
+- 第 1 次失败后等待 5 秒
+- 第 2 次失败后等待 10 秒
+- 第 3 次仍失败则退出构建
 
-SigNoz LLM observability helps you understand how your language models are performing, identify issues with prompts and responses, track token usage and costs, and optimize your AI applications for better performance and reliability.
+## 效果怎么样
 
-[Get started with LLM Observability →](https://signoz.io/docs/llm-observability/)
+- 社区镜像继续符合 OpenSpec 中 digest-pinned base image 的方向。
+- 社区 Dockerfile 默认 `ALPINE_SHA` 不再是占位符，非 workflow 构建路径更容易成功。
+- multi-arch Dockerfile 与普通 Dockerfile 的 CA 证书安装方式保持一致。
+- APK 仓库或网络短暂抖动时，构建不会立刻失败，会自动重试。
+- `apk add --no-cache` 避免缓存 APK index，镜像层更干净。
+- 运行时镜像仍包含 HTTPS 访问需要的 CA 证书 bundle。
+- enterprise 普通 Dockerfile 本次没有改成 digest-pinned base image，仍为 `FROM alpine:3.20.3`；
+  本次只对它的 CA 证书安装过程做了加固。
 
-![llm-observability-cover](https://github.com/user-attachments/assets/a6cc0ca3-59df-48f9-9c16-7c843fccff96)
+## 失败行为
 
+如果 APK 安装连续 3 次都失败，构建会明确退出，并输出：
 
-### Alerts
+```text
+apk add failed after 3 attempts
+```
 
-Use alerts in SigNoz to get notified when anything unusual happens in your application. You can set alerts on any type of telemetry signal (logs, metrics, traces), create thresholds and set up a notification channel to get notified. Advanced features like alert history and anomaly detection can help you create smarter alerts.
+这样可以区分短暂网络抖动和持续性的依赖源问题，真实问题不会被静默吞掉。
 
-Alerts in SigNoz help you identify issues proactively so that you can address them before they reach your customers.
+## 验证情况
 
-Read [more](https://signoz.io/alerts-management/).
+已执行格式和空白检查：
 
-![alerts-cover](https://github.com/user-attachments/assets/03873bb8-1b62-4adf-8f56-28bb7b1750ea)
+```bash
+git diff --check -- cmd/community/Dockerfile cmd/community/Dockerfile.multi-arch cmd/enterprise/Dockerfile cmd/enterprise/Dockerfile.multi-arch
+```
 
-### Exceptions Monitoring
+结果：通过。
 
-Monitor exceptions automatically in Python, Java, Ruby, and Javascript. For other languages, just drop in a few lines of code and start monitoring exceptions.
+未执行完整 Docker build，因为这些 Dockerfile 依赖 build context 中已经存在的目标二进制，例如：
 
-See the detailed stack trace for all exceptions caught in your application. You can also log in custom attributes to add more context to your exceptions. For example, you can add attributes to identify users for which exceptions occurred.
+- `target/linux-${TARGETARCH}/signoz-community`
+- `target/linux-${TARGETARCH}/signoz`
+- `target/linux-${ARCH}/signoz-community`
+- `target/linux-${ARCH}/signoz`
 
-Read [more](https://signoz.io/exceptions-monitoring/).
+## 影响范围
 
-
-![exceptions-cover](https://github.com/user-attachments/assets/4be37864-59f2-4e8a-8d6e-e29ad04298c5)
-
-
-<br /><br />
-
-## Why SigNoz?
-
-SigNoz is a single tool for all your monitoring and observability needs. Here are a few reasons why you should choose SigNoz:
-
-- Single tool for observability(logs, metrics, and traces)
-
-- Built on top of [OpenTelemetry](https://opentelemetry.io/), the open-source standard which frees you from any type of vendor lock-in
-
-- Correlated logs, metrics and traces for much richer context while debugging
-
-- Uses ClickHouse (used by likes of Uber & Cloudflare) as datastore - an extremely fast and highly optimized storage for observability data
-
-- DIY Query builder, PromQL, and ClickHouse queries to fulfill all your use-cases around querying observability data
-
-- Open-Source - you can use open-source, our [cloud service](https://signoz.io/teams/) or a mix of both based on your use case
-
-
-## Getting Started
-
-### Create a SigNoz Cloud Account
-
-SigNoz cloud is the easiest way to get started with SigNoz. Our cloud service is for those users who want to spend more time in getting insights for their application performance without worrying about maintenance. 
-
-[Get started for free](https://signoz.io/teams/)
-
-### Deploy using Docker(self-hosted)
-
-Please follow the steps listed [here](https://signoz.io/docs/install/docker/) to install using docker
-
-The [troubleshooting instructions](https://signoz.io/docs/install/troubleshooting/) may be helpful if you face any issues.
-
-<p>&nbsp  </p>
-  
-  
-### Deploy in Kubernetes using Helm(self-hosted)
-
-Please follow the steps listed [here](https://signoz.io/docs/deployment/helm_chart) to install using helm charts
-
-<br /><br />
-
-We also offer managed services in your infra. Check our [pricing plans](https://signoz.io/pricing/) for all details.
-
-
-## Join our Slack community
-
-Come say Hi to us on [Slack](https://signoz.io/slack) 👋
-
-<br /><br />
-
-
-### Languages supported:
-
-SigNoz supports all major programming languages for monitoring. Any framework and language supported by OpenTelemetry is supported by SigNoz. Find instructions for instrumenting different languages below:
-
-- [Java](https://signoz.io/docs/instrumentation/java/)
-- [Python](https://signoz.io/docs/instrumentation/python/)
-- [Node.js or Javascript](https://signoz.io/docs/instrumentation/javascript/)
-- [Go](https://signoz.io/docs/instrumentation/golang/)
-- [PHP](https://signoz.io/docs/instrumentation/php/)
-- [.NET](https://signoz.io/docs/instrumentation/dotnet/)
-- [Ruby](https://signoz.io/docs/instrumentation/ruby-on-rails/)
-- [Elixir](https://signoz.io/docs/instrumentation/elixir/)
-- [Rust](https://signoz.io/docs/instrumentation/rust/)
-- [Swift](https://signoz.io/docs/instrumentation/swift/)
-
-You can find our entire documentation [here](https://signoz.io/docs/introduction/).
-
-<br /><br />
-
-
-## Comparisons to Familiar Tools
-
-### SigNoz vs Prometheus
-
-Prometheus is good if you want to do just metrics. But if you want to have a seamless experience between metrics, logs and traces, then current experience of stitching together Prometheus & other tools is not great.
-
-SigNoz is a one-stop solution for metrics and other telemetry signals. And because you will use the same standard(OpenTelemetry) to collect all telemetry signals, you can also correlate these signals to troubleshoot quickly.
-
-For example, if you see that there are issues with infrastructure metrics of your k8s cluster at a timestamp, you can jump to other signals like logs and traces to understand the issue quickly.
-
-<p>&nbsp  </p>
-
-### SigNoz vs Jaeger
-
-Jaeger only does distributed tracing. SigNoz supports metrics, traces and logs - all the 3 pillars of observability.
-
-Moreover, SigNoz has few more advanced features wrt Jaeger:
-
-- Jaegar UI doesn’t show any metrics on traces or on filtered traces
-- Jaeger can’t get aggregates on filtered traces. For example, p99 latency of requests which have tag - customer_type='premium'. This can be done easily on SigNoz
-- You can also go from traces to logs easily in SigNoz
-
-<p>&nbsp  </p>
-
-### SigNoz vs Elastic 
-
-- SigNoz Logs management are based on ClickHouse, a columnar OLAP datastore which makes aggregate log analytics queries much more efficient
-- 50% lower resource requirement compared to Elastic during ingestion
-
-We have published benchmarks comparing Elastic with SigNoz. Check it out [here](https://signoz.io/blog/logs-performance-benchmark/?utm_source=github-readme&utm_medium=logs-benchmark)
-
-<p>&nbsp  </p>
-
-### SigNoz vs Loki
-
-- SigNoz supports aggregations on high-cardinality data over a huge volume while loki doesn’t.
-- SigNoz supports indexes over high cardinality data and has no limitations on the number of indexes, while Loki reaches max streams with a few indexes added to it.
-- Searching over a huge volume of data is difficult and slow in Loki compared to SigNoz
-
-We have published benchmarks comparing Loki with SigNoz. Check it out [here](https://signoz.io/blog/logs-performance-benchmark/?utm_source=github-readme&utm_medium=logs-benchmark)
-
-<br /><br />
-
-
-## Contributing
-
-We ❤️ contributions big or small. Please read [CONTRIBUTING.md](CONTRIBUTING.md) to get started with making contributions to SigNoz.
-
-Not sure how to get started? Just ping us on `#contributing` in our [slack community](https://signoz.io/slack)
-
-<br /><br />
-
-
-## Documentation
-
-You can find docs at https://signoz.io/docs/. If you need any clarification or find something missing, feel free to raise a GitHub issue with the label `documentation` or reach out to us at the community slack channel.
-
-<br /><br />
-
-
-## Community
-
-Join the [slack community](https://signoz.io/slack) to know more about distributed tracing, observability, or SigNoz and to connect with other users and contributors.
-
-If you have any ideas, questions, or any feedback, please share on our [Github Discussions](https://github.com/SigNoz/signoz/discussions)
-
-As always, thanks to our amazing contributors!
-
-<a href="https://github.com/signoz/signoz/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=signoz/signoz" />
-</a>
+- 只影响 Docker 镜像构建过程。
+- 不改变 SigNoz 应用运行时代码。
+- 不改变前端或后端业务逻辑。
+- 不改变 OpenSpec 中 OIDC 相关能力。
