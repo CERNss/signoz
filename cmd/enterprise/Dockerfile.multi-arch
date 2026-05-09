@@ -1,4 +1,4 @@
-ARG ALPINE_SHA="pass-a-valid-docker-sha-otherwise-this-will-fail"
+ARG ALPINE_SHA="1e42bbe2508154c9126d48c2b8a75420c3544343bf86fd041fb7527e017a4b4a"
 
 FROM alpine@sha256:${ALPINE_SHA}
 LABEL maintainer="signoz"
@@ -7,9 +7,19 @@ WORKDIR /root
 ARG OS="linux"
 ARG ARCH
 
-RUN apk update && \
-    apk add ca-certificates && \
-    rm -rf /var/cache/apk/*
+RUN set -eu; \
+    attempt=1; \
+    max=3; \
+    until apk add --no-cache ca-certificates-bundle; do \
+        if [ "${attempt}" -ge "${max}" ]; then \
+            echo "apk add failed after ${max} attempts"; \
+            exit 1; \
+        fi; \
+        sleep_time=$((attempt * 5)); \
+        echo "apk add failed (attempt ${attempt}/${max}), retrying in ${sleep_time}s..."; \
+        sleep "${sleep_time}"; \
+        attempt=$((attempt + 1)); \
+    done
 
 COPY ./target/${OS}-${ARCH}/signoz /root/signoz
 COPY ./templates/email /root/templates
