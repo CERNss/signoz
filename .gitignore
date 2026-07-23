@@ -7,6 +7,12 @@ node_modules
 .zed
 .idea
 
+# local AI tool dirs
+/.claude/
+/.codex/
+/.github/prompts/
+/.github/skills/
+
 deploy/docker/environment_tiny/common_test
 frontend/node_modules
 frontend/.pnp

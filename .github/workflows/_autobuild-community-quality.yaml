@@ -1,0 +1,508 @@
+name: _autobuild-community-quality
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend_changed: ${{ steps.detect.outputs.backend_changed }}
+      frontend_changed: ${{ steps.detect.outputs.frontend_changed }}
+      integration_changed: ${{ steps.detect.outputs.integration_changed }}
+      quality_changed: ${{ steps.detect.outputs.quality_changed }}
+      any_business_changed: ${{ steps.detect.outputs.any_business_changed }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+      - name: detect-changed-paths
+        id: detect
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
+            CHANGED_FILES="$(git diff --name-only HEAD~1 HEAD)"
+          else
+            # Fallback for shallow/single-commit histories.
+            CHANGED_FILES="$(git ls-files)"
+          fi
+
+          echo "Changed files:"
+          echo "${CHANGED_FILES}"
+
+          BACKEND_CHANGED=false
+          FRONTEND_CHANGED=false
+          INTEGRATION_CHANGED=false
+          QUALITY_CHANGED=false
+
+          while IFS= read -r file; do
+            [[ -z "${file}" ]] && continue
+
+            case "${file}" in
+              frontend/*)
+                FRONTEND_CHANGED=true
+                ;;
+            esac
+
+            case "${file}" in
+              tests/integration/*)
+                INTEGRATION_CHANGED=true
+                ;;
+            esac
+
+            case "${file}" in
+              .github/workflows/*)
+                QUALITY_CHANGED=true
+                ;;
+            esac
+
+            case "${file}" in
+              *.go|go.mod|go.sum|pkg/*|cmd/*|internal/*|docker/*|docs/api/openapi.yml|Makefile)
+                BACKEND_CHANGED=true
+                ;;
+            esac
+          done <<< "${CHANGED_FILES}"
+
+          ANY_BUSINESS_CHANGED=false
+          if [[ "${BACKEND_CHANGED}" == "true" || "${FRONTEND_CHANGED}" == "true" || "${INTEGRATION_CHANGED}" == "true" || "${QUALITY_CHANGED}" == "true" ]]; then
+            ANY_BUSINESS_CHANGED=true
+          fi
+
+          {
+            echo "backend_changed=${BACKEND_CHANGED}"
+            echo "frontend_changed=${FRONTEND_CHANGED}"
+            echo "integration_changed=${INTEGRATION_CHANGED}"
+            echo "quality_changed=${QUALITY_CHANGED}"
+            echo "any_business_changed=${ANY_BUSINESS_CHANGED}"
+          } >> "${GITHUB_OUTPUT}"
+
+  refcheck:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.backend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+      - name: check-community-no-ee-imports
+        run: |
+          if grep -R --include="*.go" '.*/ee/.*' pkg/; then
+            echo "Error: Found references to 'ee' packages in 'pkg' directory"
+            exit 1
+          fi
+
+          if grep -R --include="*.go" '.*/ee/.*' cmd/community/; then
+            echo "Error: Found references to 'ee' packages in 'cmd/community' directory"
+            exit 1
+          fi
+
+  go-test:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.backend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+      - name: setup-go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: go-test
+        run: go test -race ./...
+
+  go-fmt:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.backend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+      - name: setup-go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: go-fmt
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CHANGED_GO_FILES="$(git diff --name-only HEAD~1 HEAD -- '*.go')"
+          if [[ -z "${CHANGED_GO_FILES}" ]]; then
+            echo "No changed Go files in this commit."
+            exit 0
+          fi
+
+          UNFORMATTED="$(echo "${CHANGED_GO_FILES}" | xargs gofmt -l)"
+          if [[ -n "${UNFORMATTED}" ]]; then
+            echo "The following files are not gofmt-formatted:"
+            echo "${UNFORMATTED}"
+            exit 1
+          fi
+
+  go-lint:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.backend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+      - name: setup-go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: go-lint
+        shell: bash
+        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+          "$(go env GOPATH)/bin/golangci-lint" run --timeout=10m --new-from-rev=HEAD~1 --whole-files
+
+  go-deps:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.backend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+      - name: setup-go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: go-deps
+        shell: bash
+        run: |
+          go mod tidy
+          git diff --compact-summary --exit-code go.mod go.sum || (echo; echo "Unexpected difference in go.mod/go.sum. Run 'go mod tidy' locally and commit."; exit 1)
+
+  go-openapi:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.backend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+      - name: setup-go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: generate-openapi
+        run: |
+          go run cmd/enterprise/*.go generate openapi
+          git diff --compact-summary --exit-code || (echo; echo "Unexpected difference in openapi spec. Run go run cmd/enterprise/*.go generate openapi locally and commit."; exit 1)
+
+  js-tsc:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.frontend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+      - name: setup-node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+      - name: enable-corepack
+        run: corepack enable
+      - name: install-frontend
+        shell: bash
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          attempt=1
+          max=3
+          until yarn install --frozen-lockfile --network-timeout 600000; do
+            if [ "$attempt" -ge "$max" ]; then
+              echo "yarn install failed after $max attempts"
+              exit 1
+            fi
+            echo "yarn install failed (attempt $attempt/$max), retrying in 30s..."
+            sleep 30
+            attempt=$((attempt + 1))
+          done
+      - name: js-tsc
+        run: cd frontend && yarn tsc --noEmit
+
+  js-test:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.frontend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+      - name: setup-node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+      - name: enable-corepack
+        run: corepack enable
+      - name: install-frontend
+        shell: bash
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          attempt=1
+          max=3
+          until yarn install --frozen-lockfile --network-timeout 600000; do
+            if [ "$attempt" -ge "$max" ]; then
+              echo "yarn install failed after $max attempts"
+              exit 1
+            fi
+            echo "yarn install failed (attempt $attempt/$max), retrying in 30s..."
+            sleep 30
+            attempt=$((attempt + 1))
+          done
+      - name: js-test
+        run: cd frontend && yarn test --watchAll=false --passWithNoTests
+
+  js-fmt:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.frontend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+      - name: setup-node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+      - name: enable-corepack
+        run: corepack enable
+      - name: install-frontend
+        shell: bash
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          attempt=1
+          max=3
+          until yarn install --frozen-lockfile --network-timeout 600000; do
+            if [ "$attempt" -ge "$max" ]; then
+              echo "yarn install failed after $max attempts"
+              exit 1
+            fi
+            echo "yarn install failed (attempt $attempt/$max), retrying in 30s..."
+            sleep 30
+            attempt=$((attempt + 1))
+          done
+      - name: js-fmt
+        run: cd frontend && yarn fmt
+
+  js-lint:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.frontend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+      - name: setup-node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+      - name: enable-corepack
+        run: corepack enable
+      - name: install-frontend
+        shell: bash
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          attempt=1
+          max=3
+          until yarn install --frozen-lockfile --network-timeout 600000; do
+            if [ "$attempt" -ge "$max" ]; then
+              echo "yarn install failed after $max attempts"
+              exit 1
+            fi
+            echo "yarn install failed (attempt $attempt/$max), retrying in 30s..."
+            sleep 30
+            attempt=$((attempt + 1))
+          done
+      - name: js-lint
+        run: cd frontend && yarn lint
+
+  js-languages:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.frontend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+      - name: validate-md-languages
+        run: bash frontend/scripts/validate-md-languages.sh
+
+  js-authz:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.frontend_changed == 'true' || needs['detect-changes'].outputs.integration_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+      - name: setup-node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+      - name: enable-corepack
+        run: corepack enable
+      - name: install-frontend-deps
+        shell: bash
+        working-directory: ./frontend
+        run: |
+          set -euo pipefail
+          attempt=1
+          max=3
+          until yarn install --frozen-lockfile --network-timeout 600000; do
+            if [ "$attempt" -ge "$max" ]; then
+              echo "yarn install failed after $max attempts"
+              exit 1
+            fi
+            echo "yarn install failed (attempt $attempt/$max), retrying in 30s..."
+            sleep 30
+            attempt=$((attempt + 1))
+          done
+      - name: setup-uv
+        uses: astral-sh/setup-uv@v5
+      - name: install-integration-deps
+        working-directory: ./tests/integration
+        run: uv sync
+      - name: setup-test
+        run: make py-test-setup
+      - name: generate-authz-types
+        working-directory: ./frontend
+        run: yarn generate:permissions-type
+      - name: teardown-test
+        if: always()
+        run: make py-test-teardown || true
+      - name: validate-authz-types
+        run: |
+          if ! git diff --exit-code frontend/src/hooks/useAuthZ/permissions.type.ts; then
+            echo "::error::frontend/src/hooks/useAuthZ/permissions.type.ts is out of date. Please run the generator locally and commit the changes: yarn generate:permissions-type (from the frontend directory)"
+            exit 1
+          fi
+
+  js-openapi:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.frontend_changed == 'true' || needs['detect-changes'].outputs.backend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+      - name: setup-node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+      - name: enable-corepack
+        run: corepack enable
+      - name: install-frontend
+        shell: bash
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          attempt=1
+          max=3
+          until yarn install --frozen-lockfile --network-timeout 600000; do
+            if [ "$attempt" -ge "$max" ]; then
+              echo "yarn install failed after $max attempts"
+              exit 1
+            fi
+            echo "yarn install failed (attempt $attempt/$max), retrying in 30s..."
+            sleep 30
+            attempt=$((attempt + 1))
+          done
+      - name: generate-api-clients
+        run: |
+          cd frontend && yarn generate:api
+          git diff --compact-summary --exit-code || (echo; echo "Unexpected difference in generated api clients. Run yarn generate:api in frontend/ locally and commit."; exit 1)
+
+  integration:
+    needs: detect-changes
+    if: ${{ needs['detect-changes'].outputs.backend_changed == 'true' || needs['detect-changes'].outputs.frontend_changed == 'true' || needs['detect-changes'].outputs.integration_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        src:
+          - bootstrap
+          - passwordauthn
+          - callbackauthn
+          - cloudintegrations
+          - dashboard
+          - logspipelines
+          - preference
+          - querier
+          - role
+          - ttl
+          - alerts
+          - ingestionkeys
+          - rootuser
+          - serviceaccount
+        sqlstore-provider:
+          - postgres
+          - sqlite
+        sqlite-mode:
+          - wal
+        clickhouse-version:
+          - 25.12.5
+        schema-migrator-version:
+          - v0.142.0
+        postgres-version:
+          - 15
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+      - name: setup-python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: setup-uv
+        uses: astral-sh/setup-uv@v5
+      - name: install-integration-deps
+        working-directory: ./tests/integration
+        run: uv sync
+      - name: install-webdriver
+        shell: bash
+        run: |
+          set -euo pipefail
+          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          echo "deb http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee -a /etc/apt/sources.list.d/google-chrome.list
+          sudo apt-get update -qqy
+          sudo apt-get -qqy install google-chrome-stable
+          CHROME_VERSION=$(google-chrome-stable --version)
+          CHROME_FULL_VERSION=${CHROME_VERSION%%.*}
+          CHROME_MAJOR_VERSION=${CHROME_FULL_VERSION//[!0-9]}
+          sudo rm /etc/apt/sources.list.d/google-chrome.list
+          CHROMEDRIVER_VERSION=$(curl -s "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_${CHROME_MAJOR_VERSION%%.*}")
+          curl -L -O "https://storage.googleapis.com/chrome-for-testing-public/${CHROMEDRIVER_VERSION}/linux64/chromedriver-linux64.zip"
+          unzip -q chromedriver-linux64.zip
+          chmod +x chromedriver-linux64/chromedriver
+          sudo mv chromedriver-linux64/chromedriver /usr/local/bin/chromedriver
+          chromedriver -version
+          google-chrome-stable --version
+      - name: run
+        working-directory: ./tests/integration
+        run: |
+          uv run pytest \
+            --basetemp=./tmp/ \
+            src/${{ matrix.src }} \
+            --sqlstore-provider ${{ matrix.sqlstore-provider }} \
+            --sqlite-mode ${{ matrix.sqlite-mode }} \
+            --postgres-version ${{ matrix.postgres-version }} \
+            --clickhouse-version ${{ matrix.clickhouse-version }} \
+            --schema-migrator-version ${{ matrix.schema-migrator-version }}
