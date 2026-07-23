@@ -12,13 +12,13 @@ The system SHALL run a reusable quality workflow before any community Docker Hub
 - **THEN** image build-and-push jobs do not execute
 
 ### Requirement: Community autobuild workflow SHALL support runner selection
-The system SHALL select build runner target in priority order: dispatch input `runner`, repository variable `BUILD_RUNNER`, then default `macos`.
+The system SHALL select build runner target in priority order: dispatch input `runner`, repository variable `BUILD_RUNNER`, then default `linux`.
 
 #### Scenario: Workflow dispatch overrides default runner
-- **GIVEN** workflow is started with `runner=linux`
+- **GIVEN** workflow is started with `runner=macos`
 - **WHEN** jobs are evaluated
-- **THEN** linux build job runs
-- **AND** macOS build job is skipped
+- **THEN** macOS build job runs
+- **AND** linux build job is skipped
 
 ### Requirement: Community image build SHALL publish deterministic tags
 The system SHALL compute image name and publish tags using branch/tag context and commit SHA.
