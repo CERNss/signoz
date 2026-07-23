@@ -43,6 +43,40 @@ func (provider *provider) addSessionRoutes(router *mux.Router) error {
 		return err
 	}
 
+	if err := router.Handle("/api/v2/sessions/sso_context", handler.New(provider.authzMiddleware.OpenAccess(provider.sessionHandler.GetSessionSSOContext), handler.OpenAPIDef{
+		ID:                  "GetSessionSSOContext",
+		Tags:                []string{"sessions"},
+		Summary:             "Get session SSO context",
+		Description:         "This endpoint returns SSO shortcut options for the login page",
+		Request:             nil,
+		RequestContentType:  "",
+		Response:            new(authtypes.SessionSSOContext),
+		ResponseContentType: "application/json",
+		SuccessStatusCode:   http.StatusOK,
+		ErrorStatusCodes:    []int{http.StatusBadRequest},
+		Deprecated:          false,
+		SecuritySchemes:     []handler.OpenAPISecurityScheme{},
+	})).Methods(http.MethodGet).GetError(); err != nil {
+		return err
+	}
+
+	if err := router.Handle("/api/v2/sessions/logout_context", handler.New(provider.authzMiddleware.OpenAccess(provider.sessionHandler.GetSessionLogoutContext), handler.OpenAPIDef{
+		ID:                  "GetSessionLogoutContext",
+		Tags:                []string{"sessions"},
+		Summary:             "Get session logout context",
+		Description:         "This endpoint returns the logout context for the current session",
+		Request:             nil,
+		RequestContentType:  "",
+		Response:            new(authtypes.SessionLogoutContext),
+		ResponseContentType: "application/json",
+		SuccessStatusCode:   http.StatusOK,
+		ErrorStatusCodes:    []int{http.StatusBadRequest},
+		Deprecated:          false,
+		SecuritySchemes:     []handler.OpenAPISecurityScheme{{Name: authtypes.IdentNProviderTokenizer.StringValue()}},
+	})).Methods(http.MethodGet).GetError(); err != nil {
+		return err
+	}
+
 	if err := router.Handle("/api/v2/sessions/rotate", handler.New(provider.authzMiddleware.OpenAccess(provider.sessionHandler.RotateSession), handler.OpenAPIDef{
 		ID:                  "RotateSession",
 		Tags:                []string{"sessions"},

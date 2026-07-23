@@ -26,3 +26,8 @@ type CallbackAuthN interface {
 	// Get provider info such as `relay state`
 	ProviderInfo(context.Context, *authtypes.AuthDomain) *authtypes.AuthNProviderInfo
 }
+
+type LogoutURLProvider interface {
+	// The logout URL to redirect the user to. Takes the site url to build post logout redirect.
+	LogoutURL(context.Context, *url.URL, *authtypes.AuthDomain) (string, error)
+}
