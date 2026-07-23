@@ -38,7 +38,9 @@ export interface FormValues {
 		domainToAdminEmailList?: Array<{ domain?: string; adminEmail?: string }>;
 	};
 	samlConfig?: AuthtypesSamlConfigDTO;
-	oidcConfig?: AuthtypesOIDCConfigDTO;
+	oidcConfig?: AuthtypesOIDCConfigDTO & {
+		scopesText?: string;
+	};
 	roleMapping?: AuthtypesRoleMappingDTO & {
 		groupMappingsList?: Array<{ groupName?: string; role?: string }>;
 	};
@@ -121,6 +123,29 @@ export function convertDomainMappingsToList(
 	}));
 }
 
+export function convertScopesStringToArray(
+	scopesText?: string,
+): string[] | undefined {
+	if (!scopesText) {
+		return undefined;
+	}
+
+	const scopes = scopesText
+		.split(/[,\s]+/)
+		.map((scope) => scope.trim())
+		.filter(Boolean);
+
+	return scopes.length > 0 ? scopes : undefined;
+}
+
+export function convertScopesArrayToString(scopes?: string[]): string {
+	if (!Array.isArray(scopes) || scopes.length === 0) {
+		return '';
+	}
+
+	return scopes.join(', ');
+}
+
 /**
  * Prepares initial form values from API record
  */
@@ -144,7 +169,11 @@ export function prepareInitialValues(
 				: undefined,
 		oidcConfig:
 			config?.kind === AuthtypesAuthDomainConfigOIDCDTOKind.oidc
-				? config.spec
+				? {
+						...config.spec,
+						scopesText: convertScopesArrayToString(config.spec.scopes ?? undefined),
+						allowJit: config.spec.allowJit ?? true,
+					}
 				: undefined,
 		googleAuthConfig:
 			config?.kind === AuthtypesAuthDomainConfigGoogleDTOKind.google
@@ -203,6 +232,27 @@ export function prepareGoogleAuthConfig(
 }
 
 /**
+ * Prepares OIDC config for API payload. Scopes are edited as free text and
+ * serialized back into an array; an empty text leaves the field untouched.
+ */
+export function prepareOIDCConfig(
+	values: FormValues,
+): AuthtypesOIDCConfigDTO | undefined {
+	const config = values.oidcConfig;
+	if (!config) {
+		return undefined;
+	}
+
+	const { scopesText, ...rest } = config;
+	const scopes = convertScopesStringToArray(scopesText);
+
+	return {
+		...rest,
+		...(scopes && { scopes }),
+	};
+}
+
+/**
  * Prepares role mapping for API payload; only returned when there is
  * meaningful content.
  */
@@ -257,13 +307,15 @@ export function prepareConfig(
 					}
 				: undefined;
 		}
-		case AuthtypesAuthNProviderDTO.oidc:
-			return values.oidcConfig
+		case AuthtypesAuthNProviderDTO.oidc: {
+			const spec = prepareOIDCConfig(values);
+			return spec
 				? {
 						kind: AuthtypesAuthDomainConfigOIDCDTOKind.oidc,
-						spec: values.oidcConfig,
+						spec,
 					}
 				: undefined;
+		}
 		default:
 			return undefined;
 	}

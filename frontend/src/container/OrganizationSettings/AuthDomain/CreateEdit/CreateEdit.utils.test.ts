@@ -2,6 +2,7 @@ import {
 	AuthtypesAuthDomainConfigGoogleDTOKind,
 	AuthtypesAuthDomainConfigOIDCDTOKind,
 	AuthtypesAuthDomainConfigSAMLDTOKind,
+	AuthtypesAuthNProviderDTO,
 } from 'api/generated/services/sigNoz.schemas';
 
 import {
@@ -9,7 +10,11 @@ import {
 	convertDomainMappingsToRecord,
 	convertGroupMappingsToList,
 	convertGroupMappingsToRecord,
+	convertScopesArrayToString,
+	convertScopesStringToArray,
+	prepareConfig,
 	prepareInitialValues,
+	prepareOIDCConfig,
 } from './CreateEdit.utils';
 
 describe('convertGroupMappingsToRecord', () => {
@@ -153,5 +158,136 @@ describe('prepareInitialValues', () => {
 		});
 
 		expect(result.roleMapping?.groupMappingsList).toStrictEqual([]);
+	});
+});
+
+describe('OIDC scopes serialization', () => {
+	it('splits a comma or whitespace separated list into scopes', () => {
+		expect(convertScopesStringToArray('openid, profile  email')).toStrictEqual([
+			'openid',
+			'profile',
+			'email',
+		]);
+	});
+
+	it('returns undefined for empty text', () => {
+		expect(convertScopesStringToArray('')).toBeUndefined();
+		expect(convertScopesStringToArray(undefined)).toBeUndefined();
+	});
+
+	it('joins scopes back into editable text', () => {
+		expect(convertScopesArrayToString(['openid', 'groups'])).toBe(
+			'openid, groups',
+		);
+		expect(convertScopesArrayToString(undefined)).toBe('');
+	});
+});
+
+describe('prepareOIDCConfig', () => {
+	it('serializes scopesText into a scopes array and drops the text field', () => {
+		expect(
+			prepareOIDCConfig({
+				oidcConfig: {
+					issuer: 'https://oidc.example.com',
+					clientId: 'id',
+					clientSecret: 'secret',
+					scopesText: 'openid, groups',
+				},
+			}),
+		).toStrictEqual({
+			issuer: 'https://oidc.example.com',
+			clientId: 'id',
+			clientSecret: 'secret',
+			scopes: ['openid', 'groups'],
+		});
+	});
+
+	it('omits scopes when the text is empty', () => {
+		expect(
+			prepareOIDCConfig({
+				oidcConfig: {
+					issuer: 'https://oidc.example.com',
+					clientId: 'id',
+					clientSecret: 'secret',
+					scopesText: '',
+				},
+			}),
+		).toStrictEqual({
+			issuer: 'https://oidc.example.com',
+			clientId: 'id',
+			clientSecret: 'secret',
+		});
+	});
+
+	it('carries the OIDC policy fields into the config envelope', () => {
+		expect(
+			prepareConfig(
+				{
+					oidcConfig: {
+						issuer: 'https://oidc.example.com',
+						clientId: 'id',
+						clientSecret: 'secret',
+						scopesText: 'openid',
+						allowJit: false,
+						emailVerifiedPolicy: 'strict',
+						enforceEmailDomain: true,
+					},
+				},
+				AuthtypesAuthNProviderDTO.oidc,
+			),
+		).toStrictEqual({
+			kind: AuthtypesAuthDomainConfigOIDCDTOKind.oidc,
+			spec: {
+				issuer: 'https://oidc.example.com',
+				clientId: 'id',
+				clientSecret: 'secret',
+				scopes: ['openid'],
+				allowJit: false,
+				emailVerifiedPolicy: 'strict',
+				enforceEmailDomain: true,
+			},
+		});
+	});
+});
+
+describe('prepareInitialValues for OIDC', () => {
+	it('hydrates scopesText and defaults allowJit to true', () => {
+		const result = prepareInitialValues({
+			id: 'domain-1',
+			name: 'example.com',
+			enabled: true,
+			config: {
+				kind: AuthtypesAuthDomainConfigOIDCDTOKind.oidc,
+				spec: {
+					issuer: 'https://oidc.example.com',
+					clientId: 'id',
+					clientSecret: 'secret',
+					scopes: ['openid', 'groups'],
+				},
+			},
+		});
+
+		expect(result.oidcConfig?.scopesText).toBe('openid, groups');
+		expect(result.oidcConfig?.allowJit).toBe(true);
+	});
+
+	it('keeps an explicit allowJit of false', () => {
+		const result = prepareInitialValues({
+			id: 'domain-1',
+			name: 'example.com',
+			enabled: true,
+			config: {
+				kind: AuthtypesAuthDomainConfigOIDCDTOKind.oidc,
+				spec: {
+					issuer: 'https://oidc.example.com',
+					clientId: 'id',
+					clientSecret: 'secret',
+					allowJit: false,
+				},
+			},
+		});
+
+		expect(result.oidcConfig?.allowJit).toBe(false);
+		expect(result.oidcConfig?.scopesText).toBe('');
 	});
 });

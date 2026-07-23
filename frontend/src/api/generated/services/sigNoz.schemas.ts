@@ -1982,6 +1982,10 @@ export enum AuthtypesAuthDomainConfigOIDCDTOKind {
 	oidc = 'oidc',
 }
 export interface AuthtypesOIDCConfigDTO {
+	/**
+	 * @type boolean,null
+	 */
+	allowJit?: boolean | null;
 	claimMapping?: AuthtypesAttributeMappingDTO;
 	/**
 	 * @type string
@@ -1992,6 +1996,14 @@ export interface AuthtypesOIDCConfigDTO {
 	 * @format password
 	 */
 	clientSecret: string;
+	/**
+	 * @type string
+	 */
+	emailVerifiedPolicy?: string;
+	/**
+	 * @type boolean
+	 */
+	enforceEmailDomain?: boolean;
 	/**
 	 * @type boolean
 	 */
@@ -2008,6 +2020,10 @@ export interface AuthtypesOIDCConfigDTO {
 	 * @type string
 	 */
 	issuerAlias?: string;
+	/**
+	 * @type array
+	 */
+	scopes?: string[];
 }
 
 export interface AuthtypesAuthDomainConfigOIDCDTO {
@@ -2439,6 +2455,18 @@ export interface AuthtypesRoleDTO {
 	updatedAt?: string;
 }
 
+export interface AuthtypesSSODomainContextDTO {
+	/**
+	 * @type string
+	 */
+	domain?: string;
+	provider?: AuthtypesAuthNProviderDTO;
+	/**
+	 * @type string
+	 */
+	url?: string;
+}
+
 export interface AuthtypesSessionContextDTO {
 	/**
 	 * @type boolean
@@ -2448,6 +2476,20 @@ export interface AuthtypesSessionContextDTO {
 	 * @type array,null
 	 */
 	orgs?: AuthtypesOrgSessionContextDTO[] | null;
+}
+
+export interface AuthtypesSessionLogoutContextDTO {
+	/**
+	 * @type string
+	 */
+	url?: string;
+}
+
+export interface AuthtypesSessionSSOContextDTO {
+	/**
+	 * @type array,null
+	 */
+	domains?: AuthtypesSSODomainContextDTO[] | null;
 }
 
 export interface AuthtypesTransactionDTO {
@@ -12553,8 +12595,24 @@ export type CreateSessionByEmailPassword200 = {
 	status: string;
 };
 
+export type GetSessionLogoutContext200 = {
+	data: AuthtypesSessionLogoutContextDTO;
+	/**
+	 * @type string
+	 */
+	status: string;
+};
+
 export type RotateSession200 = {
 	data: AuthtypesGettableTokenDTO;
+	/**
+	 * @type string
+	 */
+	status: string;
+};
+
+export type GetSessionSSOContext200 = {
+	data: AuthtypesSessionSSOContextDTO;
 	/**
 	 * @type string
 	 */
