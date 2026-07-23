@@ -27,6 +27,8 @@ import type {
 	CreateSessionBySAMLCallbackBody,
 	CreateSessionBySAMLCallbackParams,
 	GetSessionContext200,
+	GetSessionLogoutContext200,
+	GetSessionSSOContext200,
 	RenderErrorResponseDTO,
 	RotateSession200,
 } from '../sigNoz.schemas';
@@ -567,6 +569,92 @@ export const useCreateSessionByEmailPassword = <
 	return useMutation(getCreateSessionByEmailPasswordMutationOptions(options));
 };
 /**
+ * This endpoint returns the logout context for the current session
+ * @summary Get session logout context
+ */
+export const getSessionLogoutContext = (signal?: AbortSignal) => {
+	return GeneratedAPIInstance<GetSessionLogoutContext200>({
+		url: `/api/v2/sessions/logout_context`,
+		method: 'GET',
+		signal,
+	});
+};
+
+export const getGetSessionLogoutContextQueryKey = () => {
+	return [`/api/v2/sessions/logout_context`] as const;
+};
+
+export const getGetSessionLogoutContextQueryOptions = <
+	TData = Awaited<ReturnType<typeof getSessionLogoutContext>>,
+	TError = ErrorType<RenderErrorResponseDTO>,
+>(options?: {
+	query?: UseQueryOptions<
+		Awaited<ReturnType<typeof getSessionLogoutContext>>,
+		TError,
+		TData
+	>;
+}) => {
+	const { query: queryOptions } = options ?? {};
+
+	const queryKey =
+		queryOptions?.queryKey ?? getGetSessionLogoutContextQueryKey();
+
+	const queryFn: QueryFunction<
+		Awaited<ReturnType<typeof getSessionLogoutContext>>
+	> = ({ signal }) => getSessionLogoutContext(signal);
+
+	return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+		Awaited<ReturnType<typeof getSessionLogoutContext>>,
+		TError,
+		TData
+	> & { queryKey: QueryKey };
+};
+
+export type GetSessionLogoutContextQueryResult = NonNullable<
+	Awaited<ReturnType<typeof getSessionLogoutContext>>
+>;
+export type GetSessionLogoutContextQueryError =
+	ErrorType<RenderErrorResponseDTO>;
+
+/**
+ * @summary Get session logout context
+ */
+
+export function useGetSessionLogoutContext<
+	TData = Awaited<ReturnType<typeof getSessionLogoutContext>>,
+	TError = ErrorType<RenderErrorResponseDTO>,
+>(options?: {
+	query?: UseQueryOptions<
+		Awaited<ReturnType<typeof getSessionLogoutContext>>,
+		TError,
+		TData
+	>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+	const queryOptions = getGetSessionLogoutContextQueryOptions(options);
+
+	const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+		queryKey: QueryKey;
+	};
+
+	return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get session logout context
+ */
+export const invalidateGetSessionLogoutContext = async (
+	queryClient: QueryClient,
+	options?: InvalidateOptions,
+): Promise<QueryClient> => {
+	await queryClient.invalidateQueries(
+		{ queryKey: getGetSessionLogoutContextQueryKey() },
+		options,
+	);
+
+	return queryClient;
+};
+
+/**
  * This endpoint rotates the session
  * @summary Rotate session
  */
@@ -648,4 +736,87 @@ export const useRotateSession = <
 	TContext
 > => {
 	return useMutation(getRotateSessionMutationOptions(options));
+};
+/**
+ * This endpoint returns SSO shortcut options for the login page
+ * @summary Get session SSO context
+ */
+export const getSessionSSOContext = (signal?: AbortSignal) => {
+	return GeneratedAPIInstance<GetSessionSSOContext200>({
+		url: `/api/v2/sessions/sso_context`,
+		method: 'GET',
+		signal,
+	});
+};
+
+export const getGetSessionSSOContextQueryKey = () => {
+	return [`/api/v2/sessions/sso_context`] as const;
+};
+
+export const getGetSessionSSOContextQueryOptions = <
+	TData = Awaited<ReturnType<typeof getSessionSSOContext>>,
+	TError = ErrorType<RenderErrorResponseDTO>,
+>(options?: {
+	query?: UseQueryOptions<
+		Awaited<ReturnType<typeof getSessionSSOContext>>,
+		TError,
+		TData
+	>;
+}) => {
+	const { query: queryOptions } = options ?? {};
+
+	const queryKey = queryOptions?.queryKey ?? getGetSessionSSOContextQueryKey();
+
+	const queryFn: QueryFunction<
+		Awaited<ReturnType<typeof getSessionSSOContext>>
+	> = ({ signal }) => getSessionSSOContext(signal);
+
+	return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+		Awaited<ReturnType<typeof getSessionSSOContext>>,
+		TError,
+		TData
+	> & { queryKey: QueryKey };
+};
+
+export type GetSessionSSOContextQueryResult = NonNullable<
+	Awaited<ReturnType<typeof getSessionSSOContext>>
+>;
+export type GetSessionSSOContextQueryError = ErrorType<RenderErrorResponseDTO>;
+
+/**
+ * @summary Get session SSO context
+ */
+
+export function useGetSessionSSOContext<
+	TData = Awaited<ReturnType<typeof getSessionSSOContext>>,
+	TError = ErrorType<RenderErrorResponseDTO>,
+>(options?: {
+	query?: UseQueryOptions<
+		Awaited<ReturnType<typeof getSessionSSOContext>>,
+		TError,
+		TData
+	>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+	const queryOptions = getGetSessionSSOContextQueryOptions(options);
+
+	const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+		queryKey: QueryKey;
+	};
+
+	return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get session SSO context
+ */
+export const invalidateGetSessionSSOContext = async (
+	queryClient: QueryClient,
+	options?: InvalidateOptions,
+): Promise<QueryClient> => {
+	await queryClient.invalidateQueries(
+		{ queryKey: getGetSessionSSOContextQueryKey() },
+		options,
+	);
+
+	return queryClient;
 };

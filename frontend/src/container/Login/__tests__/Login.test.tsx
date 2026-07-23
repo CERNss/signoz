@@ -6,13 +6,17 @@ import { ErrorV2 } from 'types/api';
 import { Info } from 'types/api/v1/version/get';
 import { SessionsContext } from 'types/api/v2/sessions/context/get';
 import { Token } from 'types/api/v2/sessions/email_password/post';
+import { SessionSSOContext } from 'types/api/v2/sessions/sso_context/get';
 
 import Login from '../index';
 
 const VERSION_ENDPOINT = '*/api/v1/version';
 const SESSIONS_CONTEXT_ENDPOINT = '*/api/v2/sessions/context';
+const SSO_CONTEXT_ENDPOINT = '*/api/v2/sessions/sso_context';
 const CALLBACK_AUTHN_ORG = 'callback_authn_org';
 const CALLBACK_AUTHN_URL = 'https://sso.example.com/auth';
+const SSO_SHORTCUT_DOMAIN = 'signoz.io';
+const SSO_SHORTCUT_URL = 'https://oidc.example.com/auth?state=abc';
 const PASSWORD_AUTHN_ORG = 'password_authn_org';
 const PASSWORD_AUTHN_EMAIL = 'jest.test@signoz.io';
 
@@ -118,6 +122,10 @@ const mockEmailPasswordResponse: Token = {
 	refreshToken: 'mock-refresh-token',
 };
 
+const mockNoSSOShortcuts: SessionSSOContext = {
+	domains: [],
+};
+
 describe('Login Component', () => {
 	beforeEach(() => {
 		jest.clearAllMocks();
@@ -128,6 +136,9 @@ describe('Login Component', () => {
 					ctx.status(200),
 					ctx.json({ data: mockVersionSetupCompleted, status: 'success' }),
 				),
+			),
+			rest.get(SSO_CONTEXT_ENDPOINT, (_, res, ctx) =>
+				res(ctx.status(200), ctx.json({ data: mockNoSSOShortcuts })),
 			),
 		);
 	});
@@ -146,6 +157,73 @@ describe('Login Component', () => {
 			expect(getByTestId('email')).toBeInTheDocument();
 			expect(getByTestId('initiate_login')).toBeInTheDocument();
 			expect(getByPlaceholderText('e.g. john@signoz.io')).toBeInTheDocument();
+		});
+
+		it('renders SSO shortcut buttons from SSO context API', async () => {
+			server.use(
+				rest.get(SSO_CONTEXT_ENDPOINT, (_, res, ctx) =>
+					res(
+						ctx.status(200),
+						ctx.json({
+							data: {
+								domains: [
+									{
+										domain: SSO_SHORTCUT_DOMAIN,
+										provider: 'oidc',
+										url: SSO_SHORTCUT_URL,
+									},
+								],
+							},
+						}),
+					),
+				),
+			);
+
+			render(<Login />);
+
+			await waitFor(() => {
+				expect(screen.getByTestId('sso_shortcut_signoz_io')).toBeInTheDocument();
+			});
+		});
+
+		it('redirects to SSO shortcut URL when shortcut button is clicked', async () => {
+			const user = userEvent.setup({ pointerEventsCheck: 0 });
+
+			const mockLocation = {
+				href: 'http://localhost/',
+			};
+			Object.defineProperty(window, 'location', {
+				value: mockLocation,
+				writable: true,
+			});
+
+			server.use(
+				rest.get(SSO_CONTEXT_ENDPOINT, (_, res, ctx) =>
+					res(
+						ctx.status(200),
+						ctx.json({
+							data: {
+								domains: [
+									{
+										domain: SSO_SHORTCUT_DOMAIN,
+										provider: 'oidc',
+										url: SSO_SHORTCUT_URL,
+									},
+								],
+							},
+						}),
+					),
+				),
+			);
+
+			render(<Login />);
+
+			const shortcutButton = await screen.findByTestId('sso_shortcut_signoz_io');
+			await user.click(shortcutButton);
+
+			await waitFor(() => {
+				expect(window.location.href).toBe(SSO_SHORTCUT_URL);
+			});
 		});
 
 		it('shows loading state when version data is being fetched', () => {

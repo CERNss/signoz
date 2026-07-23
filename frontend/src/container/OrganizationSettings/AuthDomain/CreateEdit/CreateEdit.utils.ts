@@ -15,7 +15,9 @@ export interface FormValues {
 		domainToAdminEmailList?: Array<{ domain?: string; adminEmail?: string }>;
 	};
 	samlConfig?: AuthtypesSamlConfigDTO;
-	oidcConfig?: AuthtypesOIDCConfigDTO;
+	oidcConfig?: AuthtypesOIDCConfigDTO & {
+		scopesText?: string;
+	};
 	roleMapping?: AuthtypesRoleMappingDTO & {
 		groupMappingsList?: Array<{ groupName?: string; role?: string }>;
 	};
@@ -98,6 +100,29 @@ export function convertDomainMappingsToList(
 	}));
 }
 
+export function convertScopesStringToArray(
+	scopesText?: string,
+): string[] | undefined {
+	if (!scopesText) {
+		return undefined;
+	}
+
+	const scopes = scopesText
+		.split(/[,\s]+/)
+		.map((scope) => scope.trim())
+		.filter(Boolean);
+
+	return scopes.length > 0 ? scopes : undefined;
+}
+
+export function convertScopesArrayToString(scopes?: string[]): string {
+	if (!Array.isArray(scopes) || scopes.length === 0) {
+		return '';
+	}
+
+	return scopes.join(', ');
+}
+
 /**
  * Prepares initial form values from API record
  */
@@ -118,7 +143,15 @@ export function prepareInitialValues(
 		ssoEnabled: config.ssoEnabled,
 		ssoType: config.ssoType,
 		samlConfig: config.samlConfig ?? undefined,
-		oidcConfig: config.oidcConfig ?? undefined,
+		oidcConfig: config.oidcConfig
+			? {
+					...config.oidcConfig,
+					scopesText: convertScopesArrayToString(
+						config.oidcConfig.scopes ?? undefined,
+					),
+					allowJit: config.oidcConfig.allowJit ?? true,
+				}
+			: undefined,
 		googleAuthConfig: config.googleAuthConfig
 			? {
 					...config.googleAuthConfig,

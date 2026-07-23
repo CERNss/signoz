@@ -6,6 +6,7 @@ import { Typography } from '@signozhq/ui/typography';
 import getVersion from 'api/v1/version/get';
 import get from 'api/v2/sessions/context/get';
 import post from 'api/v2/sessions/email_password/post';
+import getSSOContext from 'api/v2/sessions/sso_context/get';
 import afterLogin from 'AppRoutes/utils';
 import AuthError from 'components/AuthError/AuthError';
 import ROUTES from 'constants/routes';
@@ -15,6 +16,7 @@ import { ArrowRight } from '@signozhq/icons';
 import { ErrorV2 } from 'types/api';
 import APIError from 'types/api/error';
 import { SessionsContext } from 'types/api/v2/sessions/context/get';
+import { SessionSSOContext } from 'types/api/v2/sessions/sso_context/get';
 
 import tvUrl from '@/assets/svgs/tv.svg';
 
@@ -59,6 +61,8 @@ function Login(): JSX.Element {
 	const callbackAuthErrorAdditional = urlQueryParams.get('errors') || '';
 
 	const [sessionsContext, setSessionsContext] = useState<SessionsContext>();
+	const [sessionSSOContext, setSessionSSOContext] =
+		useState<SessionSSOContext>();
 	const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 	const [sessionsOrgId, setSessionsOrgId] = useState<string>('');
 	const [sessionsContextLoading, setIsLoadingSessionsContext] =
@@ -93,6 +97,30 @@ function Login(): JSX.Element {
 			history.push(ROUTES.SIGN_UP);
 		}
 	}, [versionData, versionLoading, versionError]);
+
+	useEffect(() => {
+		let mounted = true;
+
+		const fetchSessionSSOContext = async (): Promise<void> => {
+			try {
+				const response = await getSSOContext({
+					ref: window.location.href,
+				});
+
+				if (mounted) {
+					setSessionSSOContext(response.data);
+				}
+			} catch (error) {
+				console.error('Failed to fetch session SSO context', error);
+			}
+		};
+
+		fetchSessionSSOContext();
+
+		return (): void => {
+			mounted = false;
+		};
+	}, []);
 
 	// fetch the sessions context post user entering the email
 	const onNextHandler = async (): Promise<void> => {
@@ -275,6 +303,11 @@ function Login(): JSX.Element {
 		}
 	}, [sessionsOrgWarning, setErrorMessage]);
 
+	const handleSSOShortcutClick = useCallback((url: string): void => {
+		// oxlint-disable-next-line signoz/no-raw-absolute-path -- url is the provider authorization URL returned by the backend
+		window.location.href = url;
+	}, []);
+
 	// Validation helpers
 	const isEmailValid = Boolean(
 		email?.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email),
@@ -388,16 +421,33 @@ function Login(): JSX.Element {
 
 				<div className="login-form-actions">
 					{!sessionsContext && (
-						<Button
-							disabled={!isNextButtonEnabled}
-							variant="solid"
-							onClick={onNextHandler}
-							testId="initiate_login"
-							className="login-submit-btn"
-							suffix={<ArrowRight />}
-						>
-							Next
-						</Button>
+						<>
+							<Button
+								disabled={!isNextButtonEnabled}
+								variant="solid"
+								onClick={onNextHandler}
+								testId="initiate_login"
+								className="login-submit-btn"
+								suffix={<ArrowRight />}
+							>
+								Next
+							</Button>
+							{(sessionSSOContext?.domains?.length ?? 0) > 0 && (
+								<div className="login-sso-shortcuts">
+									{sessionSSOContext?.domains.map((ssoDomain) => (
+										<Button
+											key={`${ssoDomain.domain}-${ssoDomain.url}`}
+											variant="outlined"
+											onClick={(): void => handleSSOShortcutClick(ssoDomain.url)}
+											testId={`sso_shortcut_${ssoDomain.domain.replace(/\./g, '_')}`}
+											className="login-sso-shortcut-btn"
+										>
+											{`Sign in with ${ssoDomain.domain}`}
+										</Button>
+									))}
+								</div>
+							)}
+						</>
 					)}
 
 					{sessionsContext && isCallbackAuthN && (

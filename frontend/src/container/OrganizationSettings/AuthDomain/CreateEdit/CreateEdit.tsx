@@ -26,6 +26,7 @@ import AuthnProviderSelector from './AuthnProviderSelector';
 import {
 	convertDomainMappingsToRecord,
 	convertGroupMappingsToRecord,
+	convertScopesStringToArray,
 	FormValues,
 	prepareInitialValues,
 } from './CreateEdit.utils';
@@ -121,6 +122,24 @@ function CreateOrEdit(props: CreateOrEditProps): JSX.Element {
 		};
 	}, [form]);
 
+	/**
+	 * Prepares OIDC config for API payload
+	 */
+	const getOIDCConfig = useCallback(() => {
+		const config = form.getFieldValue('oidcConfig');
+		if (!config) {
+			return undefined;
+		}
+
+		const { scopesText, ...rest } = config;
+		const scopes = convertScopesStringToArray(scopesText);
+
+		return {
+			...rest,
+			...(scopes && { scopes }),
+		};
+	}, [form]);
+
 	// Prepares role mapping for API payload
 	const getRoleMapping = useCallback((): AuthtypesRoleMappingDTO | undefined => {
 		const roleMapping = form.getFieldValue('roleMapping');
@@ -161,7 +180,7 @@ function CreateOrEdit(props: CreateOrEditProps): JSX.Element {
 		const name = form.getFieldValue('name');
 		const googleAuthConfig = getGoogleAuthConfig();
 		const samlConfig = form.getFieldValue('samlConfig');
-		const oidcConfig = form.getFieldValue('oidcConfig');
+		const oidcConfig = getOIDCConfig();
 		const roleMapping = getRoleMapping();
 
 		if (isCreate) {
@@ -220,6 +239,7 @@ function CreateOrEdit(props: CreateOrEditProps): JSX.Element {
 		createAuthDomain,
 		form,
 		getGoogleAuthConfig,
+		getOIDCConfig,
 		getRoleMapping,
 		handleError,
 		isCreate,

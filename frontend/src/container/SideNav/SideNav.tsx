@@ -100,6 +100,24 @@ import { getActiveMenuKeyFromPath } from './sideNav.utils';
 
 import './SideNav.styles.scss';
 
+const NAV_LICENSE_TAG_OPTIONS = ['Cloud', 'Enterprise', 'Free', 'Community'];
+const NAV_DEFAULT_VERSION = 'v0.119.0';
+const NAV_DEFAULT_LICENSE_TAG = 'Free';
+
+const getNavLicenseTagOverride = (value?: string): string => {
+	if (!value) {
+		return '';
+	}
+
+	const normalizedValue = value.trim().toLowerCase();
+
+	return (
+		NAV_LICENSE_TAG_OPTIONS.find(
+			(tag) => tag.toLowerCase() === normalizedValue,
+		) || ''
+	);
+};
+
 function SortableFilter({ item }: { item: SidebarItem }): JSX.Element {
 	const { attributes, listeners, setNodeRef, transform, transition } =
 		useSortable({ id: item.key });
@@ -137,6 +155,13 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 		AppState,
 		AppReducer
 	>((state) => state.app);
+	const navVersionOverride = (
+		process.env.NAV_VERSION_OVERRIDE || NAV_DEFAULT_VERSION
+	).trim();
+	const navLicenseTagOverride = getNavLicenseTagOverride(
+		process.env.NAV_LICENSE_TAG_OVERRIDE || NAV_DEFAULT_LICENSE_TAG,
+	);
+	const effectiveCurrentVersion = navVersionOverride || currentVersion;
 
 	const {
 		user,
@@ -343,7 +368,10 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 		icon: <Cog size={16} />,
 	};
 
-	const isLatestVersion = checkVersionState(currentVersion, latestVersion);
+	const isLatestVersion = checkVersionState(
+		effectiveCurrentVersion,
+		latestVersion,
+	);
 
 	const [showVersionUpdateNotification, setShowVersionUpdateNotification] =
 		useState(false);
@@ -545,6 +573,10 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 		isCommunityEnterpriseUser,
 		isCommunityUser,
 	]);
+
+	const displayedLicenseTag = navLicenseTagOverride || licenseTag;
+	const isFreeTagForStyle = displayedLicenseTag === 'Free';
+	const isCloudTagForStyle = displayedLicenseTag === 'Cloud';
 
 	useEffect(() => {
 		if (!isAdmin) {
@@ -979,7 +1011,7 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 			setShowVersionUpdateNotification(false);
 		}
 	}, [
-		currentVersion,
+		effectiveCurrentVersion,
 		latestVersion,
 		isCurrentVersionError,
 		isLatestVersion,
@@ -1013,20 +1045,22 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 								<img src={signozBrandLogoUrl} alt="SigNoz" />
 							</div>
 
-							{(licenseTag || currentVersion) && (
+							{(displayedLicenseTag || effectiveCurrentVersion) && (
 								<div
 									className={cx(
 										'brand-title-section',
-										isCommunityEnterpriseUser && 'community-enterprise-user',
-										isCloudUser && 'cloud-user',
+										isFreeTagForStyle && 'community-enterprise-user',
+										isCloudTagForStyle && 'cloud-user',
 										showVersionUpdateNotification &&
 											changelog &&
 											'version-update-notification',
 									)}
 								>
-									{licenseTag && <span className="license-type"> {licenseTag} </span>}
+									{displayedLicenseTag && (
+										<span className="license-type"> {displayedLicenseTag} </span>
+									)}
 
-									{currentVersion && (
+									{effectiveCurrentVersion && (
 										<Tooltip
 											placement="bottomLeft"
 											overlayClassName="version-tooltip-overlay"
@@ -1049,14 +1083,14 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 											<div
 												className={cx(
 													'version-container',
-													!licenseTag && 'version-container-standalone',
+													!displayedLicenseTag && 'version-container-standalone',
 												)}
 											>
 												<span
 													className={cx('version', changelog && 'version-clickable')}
 													onClick={onClickVersionHandler}
 												>
-													{currentVersion}
+													{effectiveCurrentVersion}
 												</span>
 
 												{showVersionUpdateNotification && changelog && (

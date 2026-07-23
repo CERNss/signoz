@@ -292,6 +292,26 @@
 	margin-top: 24px;
 }
 
+.login-sso-shortcuts {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin-top: 16px;
+}
+
+.login-sso-shortcut-btn {
+	width: 100%;
+
+	&:hover,
+	&:focus,
+	&:active,
+	&:focus-visible {
+		color: var(--primary) !important;
+		border-color: var(--primary) !important;
+		background: transparent !important;
+	}
+}
+
 .login-submit-btn {
 	width: 100%;
 }

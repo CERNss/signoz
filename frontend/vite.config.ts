@@ -174,6 +174,12 @@ export default defineConfig(({ mode }): UserConfig => {
 			'process.env.DOCS_BASE_URL': JSON.stringify(env.VITE_DOCS_BASE_URL),
 			'process.env.ENVIRONMENT': JSON.stringify(env.VITE_ENVIRONMENT),
 			'process.env.VERSION': JSON.stringify(env.VITE_VERSION),
+			'process.env.NAV_VERSION_OVERRIDE': JSON.stringify(
+				env.VITE_NAV_VERSION_OVERRIDE,
+			),
+			'process.env.NAV_LICENSE_TAG_OVERRIDE': JSON.stringify(
+				env.VITE_NAV_LICENSE_TAG_OVERRIDE,
+			),
 		},
 		// In production, use relative paths so assets work with any base path injected by the backend.
 		// In dev, use the configured base path for proper HMR and routing.
