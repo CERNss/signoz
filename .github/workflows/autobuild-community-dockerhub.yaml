@@ -4,10 +4,10 @@ run-name: community-dockerhub-build (${{ github.ref_name }})
 # Runner selection order (first non-empty wins):
 #   1. workflow_dispatch input "runner" (per-run override)
 #   2. repository variable BUILD_RUNNER (persistent default)
-#   3. fallback to "macos"
+#   3. fallback to "linux"
 #
 # Set BUILD_RUNNER at: Settings -> Secrets and variables -> Actions -> Variables.
-# Accepted values: "macos" | "linux". Anything else falls back to macos.
+# Accepted values: "macos" | "linux". Anything else falls back to linux.
 
 on:
   push:
@@ -71,7 +71,7 @@ jobs:
             RUNNER="${VAR_RUNNER}"
           fi
           if [[ "${RUNNER}" != "macos" && "${RUNNER}" != "linux" ]]; then
-            RUNNER="macos"
+            RUNNER="linux"
           fi
           echo "runner=${RUNNER}" >> "${GITHUB_OUTPUT}"
 
