@@ -111,7 +111,7 @@ jobs:
       - name: setup-go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: go.mod
       - name: go-test
         run: go test -race ./...
 
@@ -127,7 +127,7 @@ jobs:
       - name: setup-go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: go.mod
       - name: go-fmt
         shell: bash
         run: |
@@ -158,11 +158,13 @@ jobs:
       - name: setup-go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: go.mod
       - name: go-lint
         shell: bash
         run: |
-          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+          # Pinned: @latest bundles newer govet analyzers (e.g. "inline") that flag
+          # upstream code; v2.5.0 verified clean against the fork delta.
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.5.0
           "$(go env GOPATH)/bin/golangci-lint" run --timeout=10m --new-from-rev=HEAD~1 --whole-files
 
   go-deps:
@@ -175,7 +177,7 @@ jobs:
       - name: setup-go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: go.mod
       - name: go-deps
         shell: bash
         run: |
@@ -192,7 +194,7 @@ jobs:
       - name: setup-go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: go.mod
       - name: generate-openapi
         run: |
           go run cmd/enterprise/*.go generate openapi
@@ -205,14 +207,16 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v5
+      - name: setup-pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
       - name: setup-node
         uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: yarn
-          cache-dependency-path: frontend/yarn.lock
-      - name: enable-corepack
-        run: corepack enable
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
       - name: install-frontend
         shell: bash
         working-directory: frontend
@@ -220,17 +224,17 @@ jobs:
           set -euo pipefail
           attempt=1
           max=3
-          until yarn install --frozen-lockfile --network-timeout 600000; do
+          until pnpm install --frozen-lockfile; do
             if [ "$attempt" -ge "$max" ]; then
-              echo "yarn install failed after $max attempts"
+              echo "pnpm install failed after $max attempts"
               exit 1
             fi
-            echo "yarn install failed (attempt $attempt/$max), retrying in 30s..."
+            echo "pnpm install failed (attempt $attempt/$max), retrying in 30s..."
             sleep 30
             attempt=$((attempt + 1))
           done
       - name: js-tsc
-        run: cd frontend && yarn tsc --noEmit
+        run: cd frontend && pnpm exec tsc --noEmit
 
   js-test:
     needs: detect-changes
@@ -239,14 +243,16 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v5
+      - name: setup-pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
       - name: setup-node
         uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: yarn
-          cache-dependency-path: frontend/yarn.lock
-      - name: enable-corepack
-        run: corepack enable
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
       - name: install-frontend
         shell: bash
         working-directory: frontend
@@ -254,17 +260,17 @@ jobs:
           set -euo pipefail
           attempt=1
           max=3
-          until yarn install --frozen-lockfile --network-timeout 600000; do
+          until pnpm install --frozen-lockfile; do
             if [ "$attempt" -ge "$max" ]; then
-              echo "yarn install failed after $max attempts"
+              echo "pnpm install failed after $max attempts"
               exit 1
             fi
-            echo "yarn install failed (attempt $attempt/$max), retrying in 30s..."
+            echo "pnpm install failed (attempt $attempt/$max), retrying in 30s..."
             sleep 30
             attempt=$((attempt + 1))
           done
       - name: js-test
-        run: cd frontend && yarn test --watchAll=false --passWithNoTests
+        run: cd frontend && pnpm run test --watchAll=false --passWithNoTests
 
   js-fmt:
     needs: detect-changes
@@ -273,14 +279,16 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v5
+      - name: setup-pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
       - name: setup-node
         uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: yarn
-          cache-dependency-path: frontend/yarn.lock
-      - name: enable-corepack
-        run: corepack enable
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
       - name: install-frontend
         shell: bash
         working-directory: frontend
@@ -288,17 +296,17 @@ jobs:
           set -euo pipefail
           attempt=1
           max=3
-          until yarn install --frozen-lockfile --network-timeout 600000; do
+          until pnpm install --frozen-lockfile; do
             if [ "$attempt" -ge "$max" ]; then
-              echo "yarn install failed after $max attempts"
+              echo "pnpm install failed after $max attempts"
               exit 1
             fi
-            echo "yarn install failed (attempt $attempt/$max), retrying in 30s..."
+            echo "pnpm install failed (attempt $attempt/$max), retrying in 30s..."
             sleep 30
             attempt=$((attempt + 1))
           done
       - name: js-fmt
-        run: cd frontend && yarn fmt
+        run: cd frontend && pnpm run fmt
 
   js-lint:
     needs: detect-changes
@@ -307,14 +315,16 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v5
+      - name: setup-pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
       - name: setup-node
         uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: yarn
-          cache-dependency-path: frontend/yarn.lock
-      - name: enable-corepack
-        run: corepack enable
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
       - name: install-frontend
         shell: bash
         working-directory: frontend
@@ -322,78 +332,58 @@ jobs:
           set -euo pipefail
           attempt=1
           max=3
-          until yarn install --frozen-lockfile --network-timeout 600000; do
+          until pnpm install --frozen-lockfile; do
             if [ "$attempt" -ge "$max" ]; then
-              echo "yarn install failed after $max attempts"
+              echo "pnpm install failed after $max attempts"
               exit 1
             fi
-            echo "yarn install failed (attempt $attempt/$max), retrying in 30s..."
+            echo "pnpm install failed (attempt $attempt/$max), retrying in 30s..."
             sleep 30
             attempt=$((attempt + 1))
           done
       - name: js-lint
-        run: cd frontend && yarn lint
+        run: cd frontend && pnpm run lint
 
-  js-languages:
+  # validate-md-languages.sh and the authz permissions-type generator were removed
+  # upstream (v0.134); their gate slot is replaced by the web-settings drift check
+  # that upstream jsci enforces today.
+  js-web-settings:
     needs: detect-changes
     if: ${{ needs['detect-changes'].outputs.frontend_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: checkout
         uses: actions/checkout@v5
-      - name: validate-md-languages
-        run: bash frontend/scripts/validate-md-languages.sh
-
-  js-authz:
-    needs: detect-changes
-    if: ${{ needs['detect-changes'].outputs.frontend_changed == 'true' || needs['detect-changes'].outputs.integration_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: checkout
-        uses: actions/checkout@v5
+      - name: setup-pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
       - name: setup-node
         uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: yarn
-          cache-dependency-path: frontend/yarn.lock
-      - name: enable-corepack
-        run: corepack enable
-      - name: install-frontend-deps
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: install-frontend
         shell: bash
-        working-directory: ./frontend
+        working-directory: frontend
         run: |
           set -euo pipefail
           attempt=1
           max=3
-          until yarn install --frozen-lockfile --network-timeout 600000; do
+          until pnpm install --frozen-lockfile; do
             if [ "$attempt" -ge "$max" ]; then
-              echo "yarn install failed after $max attempts"
+              echo "pnpm install failed after $max attempts"
               exit 1
             fi
-            echo "yarn install failed (attempt $attempt/$max), retrying in 30s..."
+            echo "pnpm install failed (attempt $attempt/$max), retrying in 30s..."
             sleep 30
             attempt=$((attempt + 1))
           done
-      - name: setup-uv
-        uses: astral-sh/setup-uv@v5
-      - name: install-integration-deps
-        working-directory: ./tests/integration
-        run: uv sync
-      - name: setup-test
-        run: make py-test-setup
-      - name: generate-authz-types
-        working-directory: ./frontend
-        run: yarn generate:permissions-type
-      - name: teardown-test
-        if: always()
-        run: make py-test-teardown || true
-      - name: validate-authz-types
+      - name: generate-web-settings
         run: |
-          if ! git diff --exit-code frontend/src/hooks/useAuthZ/permissions.type.ts; then
-            echo "::error::frontend/src/hooks/useAuthZ/permissions.type.ts is out of date. Please run the generator locally and commit the changes: yarn generate:permissions-type (from the frontend directory)"
-            exit 1
-          fi
+          cd frontend && pnpm generate:config:web-settings
+          git diff --compact-summary --exit-code || (echo; echo "Unexpected difference in generated web settings types. Run pnpm generate:config:web-settings in frontend/ locally and commit."; exit 1)
 
   js-openapi:
     needs: detect-changes
@@ -402,14 +392,16 @@ jobs:
     steps:
       - name: checkout
         uses: actions/checkout@v5
+      - name: setup-pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
       - name: setup-node
         uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: yarn
-          cache-dependency-path: frontend/yarn.lock
-      - name: enable-corepack
-        run: corepack enable
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
       - name: install-frontend
         shell: bash
         working-directory: frontend
@@ -417,20 +409,21 @@ jobs:
           set -euo pipefail
           attempt=1
           max=3
-          until yarn install --frozen-lockfile --network-timeout 600000; do
+          until pnpm install --frozen-lockfile; do
             if [ "$attempt" -ge "$max" ]; then
-              echo "yarn install failed after $max attempts"
+              echo "pnpm install failed after $max attempts"
               exit 1
             fi
-            echo "yarn install failed (attempt $attempt/$max), retrying in 30s..."
+            echo "pnpm install failed (attempt $attempt/$max), retrying in 30s..."
             sleep 30
             attempt=$((attempt + 1))
           done
       - name: generate-api-clients
         run: |
-          cd frontend && yarn generate:api
-          git diff --compact-summary --exit-code || (echo; echo "Unexpected difference in generated api clients. Run yarn generate:api in frontend/ locally and commit."; exit 1)
+          cd frontend && pnpm generate:api
+          git diff --compact-summary --exit-code || (echo; echo "Unexpected difference in generated api clients. Run pnpm generate:api in frontend/ locally and commit."; exit 1)
 
+  # Mirrors upstream integrationci at v0.134 (suite list, tests/ layout, versions).
   integration:
     needs: detect-changes
     if: ${{ needs['detect-changes'].outputs.backend_changed == 'true' || needs['detect-changes'].outputs.frontend_changed == 'true' || needs['detect-changes'].outputs.integration_changed == 'true' || needs['detect-changes'].outputs.quality_changed == 'true' }}
@@ -438,21 +431,33 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        src:
-          - bootstrap
-          - passwordauthn
+        suite:
+          - alerts
+          - basepath
           - callbackauthn
           - cloudintegrations
           - dashboard
-          - logspipelines
-          - preference
-          - querier
-          - role
-          - ttl
-          - alerts
           - ingestionkeys
+          - inframonitoring
+          - logspipelines
+          - passwordauthn
+          - preference
+          - querierlogs
+          - queriertraces
+          - queriermetrics
+          - querierscalar
+          - queriercommon
+          - rawexportdata
+          - querierauthz
+          - role
           - rootuser
           - serviceaccount
+          - spanmapper
+          - querier_json_body
+          - querier_skip_resource_fingerprint
+          - ttl
+          - clickhousecluster
+          - metricreduction
         sqlstore-provider:
           - postgres
           - sqlite
@@ -461,7 +466,7 @@ jobs:
         clickhouse-version:
           - 25.12.5
         schema-migrator-version:
-          - v0.142.0
+          - v0.144.6
         postgres-version:
           - 15
     steps:
@@ -472,11 +477,12 @@ jobs:
         with:
           python-version: "3.13"
       - name: setup-uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v4
       - name: install-integration-deps
-        working-directory: ./tests/integration
+        working-directory: ./tests
         run: uv sync
       - name: install-webdriver
+        if: matrix.suite == 'callbackauthn' || matrix.suite == 'basepath'
         shell: bash
         run: |
           set -euo pipefail
@@ -496,11 +502,11 @@ jobs:
           chromedriver -version
           google-chrome-stable --version
       - name: run
-        working-directory: ./tests/integration
+        working-directory: ./tests
         run: |
           uv run pytest \
             --basetemp=./tmp/ \
-            src/${{ matrix.src }} \
+            integration/tests/${{ matrix.suite }} \
             --sqlstore-provider ${{ matrix.sqlstore-provider }} \
             --sqlite-mode ${{ matrix.sqlite-mode }} \
             --postgres-version ${{ matrix.postgres-version }} \

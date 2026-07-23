@@ -174,23 +174,25 @@ jobs:
           fi
           echo "skip_setup=false" >> "${GITHUB_OUTPUT}"
 
+      - name: setup-pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
       - name: setup-node
         if: ${{ steps.node.outputs.skip_setup != 'true' }}
         uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: yarn
-          cache-dependency-path: frontend/yarn.lock
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: verify-node
         shell: bash
         run: |
           set -euo pipefail
           node -v
-          corepack --version
-
-      - name: enable-corepack
-        run: corepack enable
+          pnpm --version
 
       - name: verify-docker
         shell: bash
@@ -274,15 +276,17 @@ jobs:
           go version
           go env GOROOT GOTOOLCHAIN
 
+      - name: setup-pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+
       - name: setup-node
         uses: actions/setup-node@v5
         with:
           node-version: "22"
-          cache: yarn
-          cache-dependency-path: frontend/yarn.lock
-
-      - name: enable-corepack
-        run: corepack enable
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
 
       - name: build-frontend
         env:
