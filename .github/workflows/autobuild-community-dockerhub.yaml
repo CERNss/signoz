@@ -51,6 +51,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       runner: ${{ steps.runner.outputs.runner }}
+      hosted: ${{ steps.runner.outputs.hosted }}
+      storage_backend: ${{ steps.storage.outputs.storage_backend }}
       image: ${{ steps.meta.outputs.image }}
       tags: ${{ steps.meta.outputs.tags }}
       alpine_digest: ${{ steps.alpine.outputs.digest }}
@@ -74,6 +76,32 @@ jobs:
             RUNNER="linux"
           fi
           echo "runner=${RUNNER}" >> "${GITHUB_OUTPUT}"
+
+          # hosted=true → GitHub-hosted runner, which cannot reach private-network
+          # services (e.g. the internal Nexus). Downstream steps use this to pick
+          # the artifact staging backend.
+          HOSTED="true"
+          if [[ "${RUNNER}" == "macos" ]]; then
+            HOSTED="false"
+          fi
+          echo "hosted=${HOSTED}" >> "${GITHUB_OUTPUT}"
+
+      - name: resolve-storage
+        id: storage
+        shell: bash
+        env:
+          RUNNER_HOSTED: ${{ steps.runner.outputs.hosted }}
+        run: |
+          set -euo pipefail
+          # Mirrors the sub2api release pipeline: Nexus staging only on
+          # self-hosted runners with complete NEXUS_* config; GitHub-hosted
+          # runners always stage through actions/upload-artifact.
+          STORAGE_BACKEND="github-artifact"
+          if [[ "${RUNNER_HOSTED}" != "true" && -n "${NEXUS_URL:-}" && -n "${NEXUS_REPOSITORY:-}" && -n "${NEXUS_USERNAME:-}" && -n "${NEXUS_PASSWORD:-}" ]]; then
+            STORAGE_BACKEND="nexus"
+          fi
+          echo "storage_backend=${STORAGE_BACKEND}" >> "${GITHUB_OUTPUT}"
+          echo "Staging build artifacts via: ${STORAGE_BACKEND}"
 
       - name: setup-buildx
         uses: docker/setup-buildx-action@v3
@@ -230,6 +258,7 @@ jobs:
           tar -czf community-build.tar.gz target frontend/build
 
       - name: upload-build-artifacts-to-nexus
+        if: ${{ needs.init.outputs.storage_backend == 'nexus' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -247,6 +276,14 @@ jobs:
             -u "${NEXUS_USERNAME}:${NEXUS_PASSWORD}" \
             --upload-file community-build.tar.gz \
             "${NEXUS_UPLOAD_URL}"
+
+      - name: upload-build-artifacts
+        if: ${{ needs.init.outputs.storage_backend != 'nexus' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: community-build
+          path: community-build.tar.gz
+          retention-days: 1
 
   build-linux:
     needs: init
@@ -315,6 +352,7 @@ jobs:
           tar -czf community-build.tar.gz target frontend/build
 
       - name: upload-build-artifacts-to-nexus
+        if: ${{ needs.init.outputs.storage_backend == 'nexus' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -332,6 +370,14 @@ jobs:
             -u "${NEXUS_USERNAME}:${NEXUS_PASSWORD}" \
             --upload-file community-build.tar.gz \
             "${NEXUS_UPLOAD_URL}"
+
+      - name: upload-build-artifacts
+        if: ${{ needs.init.outputs.storage_backend != 'nexus' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: community-build
+          path: community-build.tar.gz
+          retention-days: 1
 
   push-macos:
     needs:
@@ -356,6 +402,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: download-build-artifacts-from-nexus
+        if: ${{ needs.init.outputs.storage_backend == 'nexus' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -375,6 +422,17 @@ jobs:
             -o community-build.tar.gz \
             "${NEXUS_DOWNLOAD_URL}"
           tar -xzf community-build.tar.gz
+
+      - name: download-build-artifacts
+        if: ${{ needs.init.outputs.storage_backend != 'nexus' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: community-build
+
+      - name: extract-build-artifacts
+        if: ${{ needs.init.outputs.storage_backend != 'nexus' }}
+        shell: bash
+        run: tar -xzf community-build.tar.gz
 
       - name: login-dockerhub
         uses: docker/login-action@v3
@@ -466,6 +524,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: download-build-artifacts-from-nexus
+        if: ${{ needs.init.outputs.storage_backend == 'nexus' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -485,6 +544,17 @@ jobs:
             -o community-build.tar.gz \
             "${NEXUS_DOWNLOAD_URL}"
           tar -xzf community-build.tar.gz
+
+      - name: download-build-artifacts
+        if: ${{ needs.init.outputs.storage_backend != 'nexus' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: community-build
+
+      - name: extract-build-artifacts
+        if: ${{ needs.init.outputs.storage_backend != 'nexus' }}
+        shell: bash
+        run: tar -xzf community-build.tar.gz
 
       - name: login-dockerhub
         uses: docker/login-action@v3
