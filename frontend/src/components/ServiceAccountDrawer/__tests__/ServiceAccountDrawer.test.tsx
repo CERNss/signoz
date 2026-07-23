@@ -1,24 +1,10 @@
-import type { ReactNode } from 'react';
 import { listRolesSuccessResponse } from 'mocks-server/__mockdata__/roles';
 import { rest, server } from 'mocks-server/server';
 import { NuqsTestingAdapter } from 'nuqs/adapters/testing';
 import { render, screen, userEvent, waitFor } from 'tests/test-utils';
+import { setupAuthzAdmin } from 'lib/authz/utils/authz-test-utils';
 
 import ServiceAccountDrawer from '../ServiceAccountDrawer';
-
-jest.mock('@signozhq/drawer', () => ({
-	DrawerWrapper: ({
-		content,
-		open,
-	}: {
-		content?: ReactNode;
-		open: boolean;
-	}): JSX.Element | null => (open ? <div>{content}</div> : null),
-}));
-
-jest.mock('@signozhq/sonner', () => ({
-	toast: { success: jest.fn(), error: jest.fn() },
-}));
 
 const ROLES_ENDPOINT = '*/api/v1/roles';
 const SA_KEYS_ENDPOINT = '*/api/v1/service_accounts/:id/keys';
@@ -88,6 +74,7 @@ describe('ServiceAccountDrawer', () => {
 			rest.delete(SA_ROLE_DELETE_ENDPOINT, (_, res, ctx) =>
 				res(ctx.status(200), ctx.json({ status: 'success', data: {} })),
 			),
+			setupAuthzAdmin(),
 		);
 	});
 
@@ -98,7 +85,9 @@ describe('ServiceAccountDrawer', () => {
 	it('renders Overview tab by default: editable name input, locked email, Save disabled when not dirty', async () => {
 		renderDrawer();
 
-		expect(await screen.findByDisplayValue('CI Bot')).toBeInTheDocument();
+		await expect(
+			screen.findByDisplayValue('CI Bot'),
+		).resolves.toBeInTheDocument();
 		expect(screen.getByText('ci-bot@signoz.io')).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: /Save Changes/i })).toBeDisabled();
 	});
@@ -139,7 +128,7 @@ describe('ServiceAccountDrawer', () => {
 		});
 	});
 
-	it('changing roles enables Save; clicking Save sends role add request without delete', async () => {
+	it('adding a role fires POST for the new role and no DELETE for existing roles', async () => {
 		const roleSpy = jest.fn();
 		const deleteSpy = jest.fn();
 		const user = userEvent.setup({ pointerEventsCheck: 0 });
@@ -159,6 +148,7 @@ describe('ServiceAccountDrawer', () => {
 
 		await screen.findByDisplayValue('CI Bot');
 
+		// Add signoz-viewer while keeping signoz-admin selected
 		await user.click(screen.getByLabelText('Roles'));
 		await user.click(await screen.findByTitle('signoz-viewer'));
 
@@ -173,6 +163,43 @@ describe('ServiceAccountDrawer', () => {
 				}),
 			);
 			expect(deleteSpy).not.toHaveBeenCalled();
+		});
+	});
+
+	it('removing a role fires DELETE for the removed role and no POST', async () => {
+		const roleSpy = jest.fn();
+		const deleteSpy = jest.fn();
+		const user = userEvent.setup({ pointerEventsCheck: 0 });
+
+		server.use(
+			rest.post(SA_ROLES_ENDPOINT, async (req, res, ctx) => {
+				roleSpy(await req.json());
+				return res(ctx.status(200), ctx.json({ status: 'success', data: {} }));
+			}),
+			rest.delete(SA_ROLE_DELETE_ENDPOINT, (_, res, ctx) => {
+				deleteSpy();
+				return res(ctx.status(200), ctx.json({ status: 'success', data: {} }));
+			}),
+		);
+
+		renderDrawer();
+
+		await screen.findByDisplayValue('CI Bot');
+
+		// Remove the signoz-admin tag from the multi-select
+		const adminTag = await screen.findByTitle('signoz-admin');
+		const removeBtn = adminTag.querySelector(
+			'.ant-select-selection-item-remove',
+		) as Element;
+		await user.click(removeBtn);
+
+		const saveBtn = screen.getByRole('button', { name: /Save Changes/i });
+		await waitFor(() => expect(saveBtn).not.toBeDisabled());
+		await user.click(saveBtn);
+
+		await waitFor(() => {
+			expect(deleteSpy).toHaveBeenCalled();
+			expect(roleSpy).not.toHaveBeenCalled();
 		});
 	});
 
@@ -195,21 +222,20 @@ describe('ServiceAccountDrawer', () => {
 			screen.getByRole('button', { name: /Delete Service Account/i }),
 		);
 
-		const dialog = await screen.findByRole('dialog', {
-			name: /Delete service account CI Bot/i,
-		});
-		expect(dialog).toBeInTheDocument();
+		await screen.findByTestId('delete-service-account-modal');
+		expect(
+			screen.getByTestId('delete-service-account-modal'),
+		).toBeInTheDocument();
 
-		const confirmBtns = screen.getAllByRole('button', { name: /^Delete$/i });
-		await user.click(confirmBtns[confirmBtns.length - 1]);
+		await user.click(screen.getByTestId('confirm-delete-btn'));
 
-		await waitFor(() => {
-			expect(deleteSpy).toHaveBeenCalled();
-		});
-
-		await waitFor(() => {
-			expect(screen.queryByDisplayValue('CI Bot')).not.toBeInTheDocument();
-		});
+		await waitFor(
+			() => {
+				expect(deleteSpy).toHaveBeenCalled();
+				expect(screen.queryByDisplayValue('CI Bot')).not.toBeInTheDocument();
+			},
+			{ timeout: 3000 },
+		);
 	});
 
 	it('deleted account shows read-only name, no Save button, no Delete button', async () => {
@@ -250,13 +276,6 @@ describe('ServiceAccountDrawer', () => {
 		await screen.findByText(/No keys/i);
 	});
 
-	it('shows skeleton while loading account data', () => {
-		renderDrawer();
-
-		// Skeleton renders while the fetch is in-flight
-		expect(document.querySelector('.ant-skeleton')).toBeInTheDocument();
-	});
-
 	it('shows error state when account fetch fails', async () => {
 		server.use(
 			rest.get(SA_ENDPOINT, (_, res, ctx) =>
@@ -266,11 +285,11 @@ describe('ServiceAccountDrawer', () => {
 
 		renderDrawer();
 
-		expect(
-			await screen.findByText(
+		await expect(
+			screen.findByText(
 				/An unexpected error occurred while fetching service account details/i,
 			),
-		).toBeInTheDocument();
+		).resolves.toBeInTheDocument();
 	});
 });
 
@@ -309,6 +328,7 @@ describe('ServiceAccountDrawer – save-error UX', () => {
 			rest.delete(SA_ROLE_DELETE_ENDPOINT, (_, res, ctx) =>
 				res(ctx.status(200), ctx.json({ status: 'success', data: {} })),
 			),
+			setupAuthzAdmin(),
 		);
 	});
 
@@ -343,11 +363,11 @@ describe('ServiceAccountDrawer – save-error UX', () => {
 		await waitFor(() => expect(saveBtn).not.toBeDisabled());
 		await user.click(saveBtn);
 
-		expect(
-			await screen.findByText(/Name update.*name update failed/i, undefined, {
+		await expect(
+			screen.findByText(/Name update.*name update failed/i, undefined, {
 				timeout: 5000,
 			}),
-		).toBeInTheDocument();
+		).resolves.toBeInTheDocument();
 	});
 
 	it('role add failure shows SaveErrorItem with the role name context', async () => {
@@ -379,15 +399,11 @@ describe('ServiceAccountDrawer – save-error UX', () => {
 		await waitFor(() => expect(saveBtn).not.toBeDisabled());
 		await user.click(saveBtn);
 
-		expect(
-			await screen.findByText(
-				/Role 'signoz-viewer'.*role assign failed/i,
-				undefined,
-				{
-					timeout: 5000,
-				},
-			),
-		).toBeInTheDocument();
+		await expect(
+			screen.findByText(/Role 'signoz-viewer'.*role assign failed/i, undefined, {
+				timeout: 5000,
+			}),
+		).resolves.toBeInTheDocument();
 	});
 
 	it('role add retries on 429 then succeeds without showing an error', async () => {

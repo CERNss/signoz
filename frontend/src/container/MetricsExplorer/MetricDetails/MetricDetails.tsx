@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo } from 'react';
 // eslint-disable-next-line no-restricted-imports
 import { useSelector } from 'react-redux';
 import { Color } from '@signozhq/design-tokens';
-import { Button, Divider, Drawer, Typography } from 'antd';
+import { Button, Drawer } from 'antd';
+import { Divider } from '@signozhq/ui/divider';
+import { Typography } from '@signozhq/ui/typography';
 import logEvent from 'api/common/logEvent';
 import { useGetMetricMetadata } from 'api/generated/services/metrics';
 import { useIsDarkMode } from 'hooks/useDarkMode';
-import { Compass, Crosshair, X } from 'lucide-react';
+import { Compass, Crosshair, X } from '@signozhq/icons';
 import { AppState } from 'store/reducers';
 import { GlobalReducer } from 'types/reducer/globalTime';
 
@@ -19,6 +21,7 @@ import AllAttributes from './AllAttributes';
 import DashboardsAndAlertsPopover from './DashboardsAndAlertsPopover';
 import Highlights from './Highlights';
 import Metadata from './Metadata';
+import VolumeControlSection from '../VolumeControl/components/VolumeControlSection/VolumeControlSection';
 import { MetricDetailsProps } from './types';
 import { getMetricDetailsQuery } from './utils';
 
@@ -57,13 +60,8 @@ function MetricDetails({
 		if (!metricMetadataResponse) {
 			return null;
 		}
-		const {
-			type,
-			description,
-			unit,
-			temporality,
-			isMonotonic,
-		} = metricMetadataResponse.data;
+		const { type, description, unit, temporality, isMonotonic } =
+			metricMetadataResponse.data;
 
 		return {
 			type,
@@ -74,9 +72,10 @@ function MetricDetails({
 		};
 	}, [metricMetadataResponse]);
 
-	const showInspectFeature = useMemo(() => isInspectEnabled(metadata?.type), [
-		metadata?.type,
-	]);
+	const showInspectFeature = useMemo(
+		() => isInspectEnabled(metadata?.type),
+		[metadata?.type],
+	);
 
 	const goToMetricsExplorerwithSelectedMetric = useCallback(() => {
 		if (metricName) {
@@ -192,6 +191,7 @@ function MetricDetails({
 					isLoadingMetricMetadata={isLoadingMetricMetadata}
 					refetchMetricMetadata={refetchMetricMetadata}
 				/>
+				<VolumeControlSection metricName={metricName} />
 				<AllAttributes
 					metricName={metricName}
 					metricType={metadata?.type}

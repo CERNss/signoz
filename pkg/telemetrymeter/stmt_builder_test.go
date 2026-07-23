@@ -5,13 +5,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/SigNoz/signoz/pkg/flagger"
+	"github.com/SigNoz/signoz/pkg/flagger/flaggertest"
 	"github.com/SigNoz/signoz/pkg/instrumentation/instrumentationtest"
 	"github.com/SigNoz/signoz/pkg/telemetrymetrics"
 	"github.com/SigNoz/signoz/pkg/types/metrictypes"
 	qbtypes "github.com/SigNoz/signoz/pkg/types/querybuildertypes/querybuildertypesv5"
 	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
 	"github.com/SigNoz/signoz/pkg/types/telemetrytypes/telemetrytypestest"
+	"github.com/SigNoz/signoz/pkg/valuer"
 	"github.com/stretchr/testify/require"
 )
 
@@ -166,10 +167,7 @@ func TestStatementBuilder(t *testing.T) {
 	}
 	mockMetadataStore.KeysMap = keys
 
-	flagger, err := flagger.New(context.Background(), instrumentationtest.New().ToProviderSettings(), flagger.Config{}, flagger.MustNewRegistry())
-	if err != nil {
-		t.Fatalf("failed to create flagger: %v", err)
-	}
+	flagger := flaggertest.New(t)
 
 	metricStmtBuilder := telemetrymetrics.NewMetricQueryStatementBuilder(instrumentationtest.New().ToProviderSettings(), mockMetadataStore, fm, cb, flagger)
 
@@ -184,7 +182,7 @@ func TestStatementBuilder(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 
-			q, err := statementBuilder.Build(context.Background(), 1747947419000, 1747983448000, c.requestType, c.query, nil)
+			q, err := statementBuilder.Build(context.Background(), valuer.UUID{}, 1747947419000, 1747983448000, c.requestType, c.query, nil)
 
 			if c.expectedErr != nil {
 				require.Error(t, err)

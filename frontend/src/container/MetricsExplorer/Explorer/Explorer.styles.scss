@@ -1,6 +1,14 @@
 .metrics-explorer-explore-container {
 	padding-bottom: 80px;
 
+	// Meant to fix the query builder colors
+	--input-background: var(--l2-background);
+	--input-hover-background: var(--l2-background);
+	--input-focus-background: var(--l2-background);
+	--input-border-color: var(--l2-border);
+	--input-hover-border-color: var(--internal-ant-border-color-hover);
+	--input-focus-border-color: var(--internal-ant-border-color-hover);
+
 	.explore-header {
 		display: flex;
 		align-items: center;
@@ -27,6 +35,31 @@
 
 		.rc-virtual-list-holder {
 			height: 150px;
+		}
+	}
+
+	.explore-tabs {
+		margin: 15px 0;
+		.tab {
+			background-color: var(--l1-background);
+			border-color: var(--l1-border);
+			width: 180px;
+			padding: 16px 0;
+			display: flex;
+			justify-content: center;
+			align-items: center;
+		}
+
+		.tab:first-of-type {
+			border-top-left-radius: 2px;
+		}
+
+		.tab:last-of-type {
+			border-top-right-radius: 2px;
+		}
+
+		.selected-view {
+			background: var(--l1-background);
 		}
 	}
 
@@ -90,6 +123,66 @@
 			gap: 16px;
 			width: 100%;
 			height: fit-content;
+		}
+
+		.related-metrics-container {
+			width: 100%;
+			min-height: 300px;
+			display: flex;
+			flex-direction: column;
+			gap: 10px;
+
+			.related-metrics-header {
+				display: flex;
+				align-items: center;
+				justify-content: flex-start;
+
+				.metric-name-select {
+					width: 20%;
+					margin-right: 10px;
+				}
+
+				.related-metrics-input {
+					width: 40%;
+
+					.ant-input-wrapper {
+						.ant-input-group-addon {
+							.related-metrics-select {
+								width: 250px;
+								border: 1px solid var(--l1-border) !important;
+
+								.ant-select-selector {
+									text-align: left;
+									color: var(--muted-foreground) !important;
+								}
+							}
+						}
+					}
+				}
+			}
+
+			.related-metrics-body {
+				margin-top: 20px;
+				max-height: 650px;
+				overflow-y: scroll;
+
+				.related-metrics-card-container {
+					margin-bottom: 20px;
+					min-height: 640px;
+
+					.related-metrics-card {
+						display: flex;
+						flex-direction: column;
+						gap: 16px;
+
+						.related-metrics-card-error {
+							padding-top: 10px;
+							height: fit-content;
+							width: fit-content;
+						}
+					}
+				}
+			}
 		}
 	}
 }

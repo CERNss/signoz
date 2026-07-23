@@ -1,16 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from 'react-query';
 import { useSearchParams } from 'react-router-dom-v5-compat';
 import * as Sentry from '@sentry/react';
 import { Card } from 'antd';
 import logEvent from 'api/common/logEvent';
 import cx from 'classnames';
 import ExplorerCard from 'components/ExplorerCard/ExplorerCard';
+import QueryCancelledPlaceholder from 'components/QueryCancelledPlaceholder';
 import QuickFilters from 'components/QuickFilters/QuickFilters';
 import { QuickFiltersSource, SignalType } from 'components/QuickFilters/types';
 import WarningPopover from 'components/WarningPopover/WarningPopover';
 import { LOCALSTORAGE } from 'constants/localStorage';
 import { AVAILABLE_EXPORT_PANEL_TYPES } from 'constants/panelTypes';
 import { initialQueriesMap, PANEL_TYPES } from 'constants/queryBuilder';
+import { usePageActions } from 'container/AIAssistant/pageActions/usePageActions';
 import ExplorerOptionWrapper from 'container/ExplorerOptions/ExplorerOptionWrapper';
 import { useOptionsMenu } from 'container/OptionsMenu';
 import LeftToolbarActions from 'container/QueryBuilder/components/ToolbarActions/LeftToolbarActions';
@@ -25,6 +28,8 @@ import { defaultSelectedColumns } from 'container/TracesExplorer/ListView/config
 import QuerySection from 'container/TracesExplorer/QuerySection';
 import TableView from 'container/TracesExplorer/TableView';
 import TracesView from 'container/TracesExplorer/TracesView';
+import { ExportDashboard } from 'hooks/dashboard/useExportDashboards';
+import { useGetExportToDashboardLink } from 'hooks/dashboard/useGetExportToDashboardLink';
 import { useGetPanelTypesQueryParam } from 'hooks/queryBuilder/useGetPanelTypesQueryParam';
 import { useQueryBuilder } from 'hooks/queryBuilder/useQueryBuilder';
 import { useShareBuilderUrl } from 'hooks/queryBuilder/useShareBuilderUrl';
@@ -32,22 +37,27 @@ import {
 	ICurrentQueryData,
 	useHandleExplorerTabChange,
 } from 'hooks/useHandleExplorerTabChange';
+import { useIsAIAssistantEnabled } from 'hooks/useIsAIAssistantEnabled';
 import { useSafeNavigate } from 'hooks/useSafeNavigate';
 import { isEmpty } from 'lodash-es';
 import ErrorBoundaryFallback from 'pages/ErrorBoundaryFallback/ErrorBoundaryFallback';
 import { ExplorerViews } from 'pages/LogsExplorer/utils';
 import { TOOLBAR_VIEWS } from 'pages/TracesExplorer/constants';
 import { Warning } from 'types/api';
-import { Dashboard } from 'types/api/dashboard/getAll';
 import { Query } from 'types/api/queryBuilder/queryBuilderData';
 import { DataSource } from 'types/common/queryBuilder';
-import { generateExportToDashboardLink } from 'utils/dashboard/generateExportToDashboardLink';
 import {
 	explorerViewToPanelType,
 	getExplorerViewFromUrl,
 } from 'utils/explorerUtils';
 import { v4 } from 'uuid';
 
+import {
+	tracesAddFilterAction,
+	tracesChangeViewAction,
+	tracesRunQueryAction,
+	tracesSaveViewAction,
+} from './aiActions';
 import TimeSeriesView from './TimeSeriesView';
 
 import './TracesExplorer.styles.scss';
@@ -59,7 +69,12 @@ function TracesExplorer(): JSX.Element {
 		handleRunQuery,
 		stagedQuery,
 		handleSetConfig,
+		currentQuery,
+		handleSetQueryData,
+		redirectWithQueryBuilderData,
 	} = useQueryBuilder();
+
+	const isAIAssistantEnabled = useIsAIAssistantEnabled();
 
 	const { options } = useOptionsMenu({
 		storageKey: LOCALSTORAGE.TRACES_LIST_OPTIONS,
@@ -71,17 +86,35 @@ function TracesExplorer(): JSX.Element {
 	});
 
 	const [searchParams] = useSearchParams();
+	const queryClient = useQueryClient();
 	const listQueryKeyRef = useRef<any>();
 
 	// Get panel type from URL
 	const panelTypesFromUrl = useGetPanelTypesQueryParam(PANEL_TYPES.LIST);
 	const [isLoadingQueries, setIsLoadingQueries] = useState<boolean>(false);
+	const [isCancelled, setIsCancelled] = useState(false);
+
+	useEffect(() => {
+		if (isLoadingQueries) {
+			setIsCancelled(false);
+		}
+	}, [isLoadingQueries]);
+
+	const handleCancelQuery = useCallback(() => {
+		if (listQueryKeyRef.current) {
+			queryClient.cancelQueries(listQueryKeyRef.current);
+		}
+		setIsCancelled(true);
+		// Reset loading state — the active view unmounts when cancelled, so no
+		// child will call setIsLoadingQueries(false) otherwise.
+		setIsLoadingQueries(false);
+	}, [queryClient]);
 
 	const [selectedView, setSelectedView] = useState<ExplorerViews>(() =>
 		getExplorerViewFromUrl(searchParams, panelTypesFromUrl),
 	);
 
-	const [warning, setWarning] = useState<Warning | undefined>(undefined);
+	const [warning, setWarning] = useState<Warning | undefined>();
 	const [isOpen, setOpen] = useState<boolean>(true);
 
 	const defaultQuery = useMemo(
@@ -96,6 +129,7 @@ function TracesExplorer(): JSX.Element {
 
 	const { handleExplorerTabChange } = useHandleExplorerTabChange();
 	const { safeNavigate } = useSafeNavigate();
+	const getExportToDashboardLink = useGetExportToDashboardLink();
 
 	const handleChangeSelectedView = useCallback(
 		(view: ExplorerViews, querySearchParameters?: ICurrentQueryData): void => {
@@ -111,6 +145,45 @@ function TracesExplorer(): JSX.Element {
 		[handleExplorerTabChange, handleSetConfig],
 	);
 
+	// ─── AI Assistant page actions (only when license feature is on) ───────────
+	const aiActions = useMemo(
+		() =>
+			isAIAssistantEnabled
+				? [
+						tracesRunQueryAction({
+							currentQuery,
+							handleSetQueryData,
+							redirectWithQueryBuilderData,
+						}),
+						tracesAddFilterAction({
+							currentQuery,
+							handleSetQueryData,
+							redirectWithQueryBuilderData,
+						}),
+						tracesChangeViewAction({
+							onChangeView: (view) => handleChangeSelectedView(view as ExplorerViews),
+						}),
+						tracesSaveViewAction({
+							// POC stub — logs a save request; wire to real API when available
+							onSaveView: async (name) => {
+								// eslint-disable-next-line no-console
+								console.info('[AI Assistant] Save view requested:', name);
+							},
+						}),
+					]
+				: [],
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[
+			isAIAssistantEnabled,
+			currentQuery,
+			handleSetQueryData,
+			redirectWithQueryBuilderData,
+			handleChangeSelectedView,
+		],
+	);
+	usePageActions('traces-explorer', aiActions);
+	// ───────────────────────────────────────────────────────────────────────────
+
 	const exportDefaultQuery = useMemo(
 		() =>
 			getQueryByPanelType(
@@ -121,7 +194,7 @@ function TracesExplorer(): JSX.Element {
 	);
 
 	const handleExport = useCallback(
-		(dashboard: Dashboard | null, isNewDashboard?: boolean): void => {
+		(dashboard: ExportDashboard | null, isNewDashboard?: boolean): void => {
 			if (!dashboard || !panelType) {
 				return;
 			}
@@ -141,19 +214,27 @@ function TracesExplorer(): JSX.Element {
 			logEvent('Traces Explorer: Add to dashboard successful', {
 				panelType,
 				isNewDashboard,
-				dashboardName: dashboard?.data?.title,
+				dashboardName: dashboard?.title,
 			});
 
-			const dashboardEditView = generateExportToDashboardLink({
+			const dashboardEditView = getExportToDashboardLink({
 				query,
 				panelType: panelTypeParam,
 				dashboardId: dashboard.id,
 				widgetId,
 			});
 
-			safeNavigate(dashboardEditView);
+			if (dashboardEditView) {
+				safeNavigate(dashboardEditView);
+			}
 		},
-		[exportDefaultQuery, panelType, safeNavigate, options],
+		[
+			exportDefaultQuery,
+			panelType,
+			safeNavigate,
+			options,
+			getExportToDashboardLink,
+		],
 	);
 
 	useShareBuilderUrl({ defaultValue: defaultQuery });
@@ -210,9 +291,12 @@ function TracesExplorer(): JSX.Element {
 							}
 							rightActions={
 								<RightToolbarActions
-									onStageRunQuery={(): void => handleRunQuery()}
+									onStageRunQuery={(): void => {
+										setIsCancelled(false);
+										handleRunQuery();
+									}}
 									isLoadingQueries={isLoadingQueries}
-									listQueryKeyRef={listQueryKeyRef}
+									handleCancelQuery={handleCancelQuery}
 								/>
 							}
 						/>
@@ -224,7 +308,11 @@ function TracesExplorer(): JSX.Element {
 					</ExplorerCard>
 
 					<div className="traces-explorer-views">
-						{selectedView === ExplorerViews.LIST && (
+						{isCancelled && (
+							<QueryCancelledPlaceholder subText='Click "Run Query" to load traces.' />
+						)}
+
+						{!isCancelled && selectedView === ExplorerViews.LIST && (
 							<div className="trace-explorer-list-view">
 								<ListView
 									isFilterApplied={isFilterApplied}
@@ -235,7 +323,7 @@ function TracesExplorer(): JSX.Element {
 							</div>
 						)}
 
-						{selectedView === ExplorerViews.TRACE && (
+						{!isCancelled && selectedView === ExplorerViews.TRACE && (
 							<div className="trace-explorer-traces-view">
 								<TracesView
 									isFilterApplied={isFilterApplied}
@@ -246,7 +334,7 @@ function TracesExplorer(): JSX.Element {
 							</div>
 						)}
 
-						{selectedView === ExplorerViews.TIMESERIES && (
+						{!isCancelled && selectedView === ExplorerViews.TIMESERIES && (
 							<div className="trace-explorer-time-series-view">
 								<TimeSeriesView
 									dataSource={DataSource.TRACES}
@@ -258,7 +346,7 @@ function TracesExplorer(): JSX.Element {
 							</div>
 						)}
 
-						{selectedView === ExplorerViews.TABLE && (
+						{!isCancelled && selectedView === ExplorerViews.TABLE && (
 							<div className="trace-explorer-table-view">
 								<TableView
 									setWarning={setWarning}

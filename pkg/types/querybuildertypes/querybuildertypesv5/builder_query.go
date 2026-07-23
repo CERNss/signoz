@@ -1,10 +1,14 @@
 package querybuildertypesv5
 
 import (
+	"bytes"
 	"fmt"
+	"slices"
 
+	"github.com/SigNoz/signoz/pkg/http/binding"
 	"github.com/SigNoz/signoz/pkg/types/metrictypes"
 	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
+	"github.com/swaggest/jsonschema-go"
 )
 
 type QueryBuilderQuery[T any] struct {
@@ -12,32 +16,32 @@ type QueryBuilderQuery[T any] struct {
 	Name string `json:"name"`
 
 	// stepInterval of the query
-	StepInterval Step `json:"stepInterval,omitempty"`
+	StepInterval Step `json:"stepInterval,omitzero"`
 
 	// signal to query
 	Signal telemetrytypes.Signal `json:"signal,omitempty"`
 
 	// source for query
-	Source telemetrytypes.Source `json:"source,omitempty"`
+	Source telemetrytypes.Source `json:"source"`
 
 	// we want to support multiple aggregations
 	// currently supported: []Aggregation, []MetricAggregation
-	Aggregations []T `json:"aggregations,omitempty"`
+	Aggregations []T `json:"aggregations,omitzero"`
 
 	// disabled if true, the query will not be executed
-	Disabled bool `json:"disabled,omitempty"`
+	Disabled bool `json:"disabled"`
 
 	// search query is simple string
 	Filter *Filter `json:"filter,omitempty"`
 
 	// group by keys to group by
-	GroupBy []GroupByKey `json:"groupBy,omitempty"`
+	GroupBy []GroupByKey `json:"groupBy,omitzero"`
 
 	// order by keys and directions
-	Order []OrderBy `json:"order,omitempty"`
+	Order []OrderBy `json:"order,omitzero"`
 
 	// select columns to select
-	SelectFields []telemetrytypes.TelemetryFieldKey `json:"selectFields,omitempty"`
+	SelectFields []telemetrytypes.TelemetryFieldKey `json:"selectFields,omitzero"`
 
 	// limit the maximum number of rows to return
 	Limit int `json:"limit,omitempty"`
@@ -57,16 +61,42 @@ type QueryBuilderQuery[T any] struct {
 
 	// secondary aggregation to apply to the query
 	// on top of the primary aggregation
-	SecondaryAggregations []SecondaryAggregation `json:"secondaryAggregations,omitempty"`
+	SecondaryAggregations []SecondaryAggregation `json:"secondaryAggregations,omitzero"`
 
 	// functions to apply to the query
-	Functions []Function `json:"functions,omitempty"`
+	Functions []Function `json:"functions,omitzero"`
 
-	Legend string `json:"legend,omitempty"`
+	Legend string `json:"legend"`
 
 	// ShiftBy is extracted from timeShift function for internal use
 	// This field is not serialized to JSON
 	ShiftBy int64 `json:"-"`
+}
+
+// PrepareJSONSchema pins `signal` to the single value implied by the aggregation
+// type T, as an inline single-value enum, and marks it required. This lets a
+// oneOf over the QueryBuilderQuery[T] instantiations be discriminated by signal.
+func (QueryBuilderQuery[T]) PrepareJSONSchema(s *jsonschema.Schema) error {
+	var signal telemetrytypes.Signal
+	switch any(*new(T)).(type) {
+	case LogAggregation:
+		signal = telemetrytypes.SignalLogs
+	case MetricAggregation:
+		signal = telemetrytypes.SignalMetrics
+	case TraceAggregation:
+		signal = telemetrytypes.SignalTraces
+	default:
+		return nil
+	}
+	if _, ok := s.Properties["signal"]; !ok {
+		return nil
+	}
+	prop := (&jsonschema.Schema{}).WithType(jsonschema.String.Type()).WithEnum(signal.StringValue())
+	s.Properties["signal"] = prop.ToSchemaOrBool()
+	if !slices.Contains(s.Required, "signal") {
+		s.Required = append(s.Required, "signal")
+	}
+	return nil
 }
 
 // Copy creates a deep copy of the QueryBuilderQuery.
@@ -133,8 +163,8 @@ func (q *QueryBuilderQuery[T]) UnmarshalJSON(data []byte) error {
 	type Alias QueryBuilderQuery[T]
 
 	var temp Alias
-	// Use UnmarshalJSONWithContext for better error messages
-	if err := UnmarshalJSONWithContext(data, &temp, fmt.Sprintf("query spec for %T", q)); err != nil {
+	// Strict-decode the alias so unknown fields surface with field-name suggestions.
+	if err := binding.JSON.BindBody(bytes.NewReader(data), &temp, binding.WithDisallowUnknownFields(true), binding.WithUnknownFieldContext(fmt.Sprintf("query spec for %T", q))); err != nil {
 		return err
 	}
 
@@ -221,6 +251,33 @@ func CanShortCircuitDelta(metricAgg MetricAggregation) bool {
 		return true
 	}
 	if metricAgg.Type == metrictypes.ExpHistogramType && sa.IsPercentile() {
+		return true
+	}
+
+	return false
+}
+
+// CanShortCircuitReduced is like CanShortCircuitDelta but for reduced.
+func CanShortCircuitReduced(metricAgg MetricAggregation) bool {
+	if metricAgg.ValueFilter != nil {
+		return false
+	}
+
+	ta := metricAgg.TimeAggregation
+	sa := metricAgg.SpaceAggregation
+
+	if metricAgg.Type == metrictypes.SumType || metricAgg.Type == metrictypes.HistogramType {
+		return (ta == metrictypes.TimeAggregationRate || ta == metrictypes.TimeAggregationIncrease || ta == metrictypes.TimeAggregationSum) &&
+			sa == metrictypes.SpaceAggregationSum
+	}
+
+	if ta == metrictypes.TimeAggregationSum && sa == metrictypes.SpaceAggregationSum {
+		return true
+	}
+	if ta == metrictypes.TimeAggregationMin && sa == metrictypes.SpaceAggregationMin {
+		return true
+	}
+	if ta == metrictypes.TimeAggregationMax && sa == metrictypes.SpaceAggregationMax {
 		return true
 	}
 

@@ -3,8 +3,6 @@ package signoz
 import (
 	"github.com/SigNoz/signoz/pkg/alertmanager"
 	"github.com/SigNoz/signoz/pkg/alertmanager/nfmanager"
-	"github.com/SigNoz/signoz/pkg/auditor"
-	"github.com/SigNoz/signoz/pkg/auditor/noopauditor"
 	"github.com/SigNoz/signoz/pkg/alertmanager/nfmanager/rulebasednotification"
 	"github.com/SigNoz/signoz/pkg/alertmanager/signozalertmanager"
 	"github.com/SigNoz/signoz/pkg/analytics"
@@ -12,6 +10,8 @@ import (
 	"github.com/SigNoz/signoz/pkg/analytics/segmentanalytics"
 	"github.com/SigNoz/signoz/pkg/apiserver"
 	"github.com/SigNoz/signoz/pkg/apiserver/signozapiserver"
+	"github.com/SigNoz/signoz/pkg/auditor"
+	"github.com/SigNoz/signoz/pkg/auditor/noopauditor"
 	"github.com/SigNoz/signoz/pkg/authz"
 	"github.com/SigNoz/signoz/pkg/cache"
 	"github.com/SigNoz/signoz/pkg/cache/memorycache"
@@ -28,6 +28,8 @@ import (
 	"github.com/SigNoz/signoz/pkg/identn/apikeyidentn"
 	"github.com/SigNoz/signoz/pkg/identn/impersonationidentn"
 	"github.com/SigNoz/signoz/pkg/identn/tokenizeridentn"
+	"github.com/SigNoz/signoz/pkg/meterreporter"
+	"github.com/SigNoz/signoz/pkg/meterreporter/noopmeterreporter"
 	"github.com/SigNoz/signoz/pkg/modules/authdomain/implauthdomain"
 	"github.com/SigNoz/signoz/pkg/modules/organization"
 	"github.com/SigNoz/signoz/pkg/modules/organization/implorganization"
@@ -44,9 +46,6 @@ import (
 	"github.com/SigNoz/signoz/pkg/prometheus/clickhouseprometheus"
 	"github.com/SigNoz/signoz/pkg/querier"
 	"github.com/SigNoz/signoz/pkg/querier/signozquerier"
-	"github.com/SigNoz/signoz/pkg/queryparser"
-	"github.com/SigNoz/signoz/pkg/ruler"
-	"github.com/SigNoz/signoz/pkg/ruler/signozruler"
 	"github.com/SigNoz/signoz/pkg/sharder"
 	"github.com/SigNoz/signoz/pkg/sharder/noopsharder"
 	"github.com/SigNoz/signoz/pkg/sharder/singlesharder"
@@ -88,9 +87,9 @@ func NewCacheProviderFactories() factory.NamedMap[factory.ProviderFactory[cache.
 	)
 }
 
-func NewWebProviderFactories() factory.NamedMap[factory.ProviderFactory[web.Web, web.Config]] {
+func NewWebProviderFactories(globalConfig global.Config) factory.NamedMap[factory.ProviderFactory[web.Web, web.Config]] {
 	return factory.MustNewNamedMap(
-		routerweb.NewFactory(),
+		routerweb.NewFactory(globalConfig),
 		noopweb.NewFactory(),
 	)
 }
@@ -197,6 +196,32 @@ func NewSQLMigrationProviderFactories(
 		sqlmigration.NewDeprecateAPIKeyFactory(sqlstore, sqlschema),
 		sqlmigration.NewServiceAccountAuthzactory(sqlstore),
 		sqlmigration.NewDropUserDeletedAtFactory(sqlstore, sqlschema),
+		sqlmigration.NewMigrateAWSAllRegionsFactory(sqlstore),
+		sqlmigration.NewAddServiceAccountManagedRoleTransactionsFactory(sqlstore),
+		sqlmigration.NewAddSpanMapperFactory(sqlstore, sqlschema),
+		sqlmigration.NewAddLLMPricingRulesFactory(sqlstore, sqlschema),
+		sqlmigration.NewMigrateMetaresourcesTuplesFactory(sqlstore),
+		sqlmigration.NewAddTagsFactory(sqlstore, sqlschema),
+		sqlmigration.NewAddRoleCRUDTuplesFactory(sqlstore),
+		sqlmigration.NewAddIntegrationDashboardFactory(sqlstore, sqlschema),
+		sqlmigration.NewAddSourceToDashboardFactory(sqlstore, sqlschema),
+		sqlmigration.NewMigrateCloudIntegrationDashboardsFactory(sqlstore),
+		sqlmigration.NewAddScopeToPlannedMaintenanceFactory(sqlstore, sqlschema),
+		sqlmigration.NewMigrateInstalledIntegrationDashboardsFactory(sqlstore),
+		sqlmigration.NewAddDashboardNameFactory(sqlstore, sqlschema),
+		sqlmigration.NewFixChangelogOperationTypeFactory(sqlstore, sqlschema),
+		sqlmigration.NewCloudIntegrationRemoveCascadeDeleteFactory(sqlschema),
+		sqlmigration.NewAddUserDashboardPreferenceFactory(sqlstore, sqlschema),
+		sqlmigration.NewRecreateUserDashboardPreferenceFactory(sqlstore, sqlschema),
+		sqlmigration.NewMigrateRecurrenceBoundsFactory(sqlstore),
+		sqlmigration.NewAddDashboardViewFactory(sqlstore, sqlschema),
+		sqlmigration.NewMigrateSSORoleMappingNamesFactory(sqlstore),
+		sqlmigration.NewAddMetricReductionRulesFactory(sqlstore, sqlschema),
+		sqlmigration.NewRemoveOrganizationTuplesFactory(sqlstore),
+		sqlmigration.NewAddRoleTransactionGroupsFactory(sqlstore, sqlschema),
+		sqlmigration.NewAddTagUniqueIndexFactory(sqlstore, sqlschema),
+		sqlmigration.NewAddTelemetryTuplesFactory(sqlstore),
+		sqlmigration.NewAddTagRelationRankFactory(sqlstore, sqlschema),
 	)
 }
 
@@ -223,15 +248,14 @@ func NewNotificationManagerProviderFactories(routeStore alertmanagertypes.RouteS
 	)
 }
 
-func NewAlertmanagerProviderFactories(sqlstore sqlstore.SQLStore, orgGetter organization.Getter, nfManager nfmanager.NotificationManager) factory.NamedMap[factory.ProviderFactory[alertmanager.Alertmanager, alertmanager.Config]] {
+func NewAlertmanagerProviderFactories(
+	sqlstore sqlstore.SQLStore,
+	orgGetter organization.Getter,
+	nfManager nfmanager.NotificationManager,
+	maintenanceStore alertmanagertypes.MaintenanceStore,
+) factory.NamedMap[factory.ProviderFactory[alertmanager.Alertmanager, alertmanager.Config]] {
 	return factory.MustNewNamedMap(
-		signozalertmanager.NewFactory(sqlstore, orgGetter, nfManager),
-	)
-}
-
-func NewRulerProviderFactories(sqlstore sqlstore.SQLStore, queryParser queryparser.QueryParser) factory.NamedMap[factory.ProviderFactory[ruler.Ruler, ruler.Config]] {
-	return factory.MustNewNamedMap(
-		signozruler.NewFactory(sqlstore, queryParser),
+		signozalertmanager.NewFactory(sqlstore, orgGetter, nfManager, maintenanceStore),
 	)
 }
 
@@ -249,9 +273,9 @@ func NewSharderProviderFactories() factory.NamedMap[factory.ProviderFactory[shar
 	)
 }
 
-func NewStatsReporterProviderFactories(telemetryStore telemetrystore.TelemetryStore, collectors []statsreporter.StatsCollector, orgGetter organization.Getter, userGetter user.Getter, tokenizer tokenizer.Tokenizer, build version.Build, analyticsConfig analytics.Config) factory.NamedMap[factory.ProviderFactory[statsreporter.StatsReporter, statsreporter.Config]] {
+func NewStatsReporterProviderFactories(aggregator statsreporter.Aggregator, orgGetter organization.Getter, userGetter user.Getter, tokenizer tokenizer.Tokenizer, build version.Build, analyticsConfig analytics.Config) factory.NamedMap[factory.ProviderFactory[statsreporter.StatsReporter, statsreporter.Config]] {
 	return factory.MustNewNamedMap(
-		analyticsstatsreporter.NewFactory(telemetryStore, collectors, orgGetter, userGetter, tokenizer, build, analyticsConfig),
+		analyticsstatsreporter.NewFactory(aggregator, orgGetter, userGetter, tokenizer, build, analyticsConfig),
 		noopstatsreporter.NewFactory(),
 	)
 }
@@ -262,14 +286,14 @@ func NewQuerierProviderFactories(telemetryStore telemetrystore.TelemetryStore, p
 	)
 }
 
-func NewAPIServerProviderFactories(orgGetter organization.Getter, authz authz.AuthZ, modules Modules, handlers Handlers) factory.NamedMap[factory.ProviderFactory[apiserver.APIServer, apiserver.Config]] {
+func NewAPIServerProviderFactories(orgGetter organization.Getter, authz authz.AuthZ, modules Modules, handlers Handlers, globalConfig global.Config) factory.NamedMap[factory.ProviderFactory[apiserver.APIServer, apiserver.Config]] {
 	return factory.MustNewNamedMap(
 		signozapiserver.NewFactory(
 			orgGetter,
 			authz,
 			implorganization.NewHandler(modules.OrgGetter, modules.OrgSetter),
 			impluser.NewHandler(modules.UserSetter, modules.UserGetter),
-			implsession.NewHandler(modules.Session),
+			implsession.NewHandler(modules.Session, globalConfig),
 			implauthdomain.NewHandler(modules.AuthDomain),
 			implpreference.NewHandler(modules.Preference),
 			handlers.Global,
@@ -278,6 +302,8 @@ func NewAPIServerProviderFactories(orgGetter organization.Getter, authz authz.Au
 			modules.Dashboard,
 			handlers.Dashboard,
 			handlers.MetricsExplorer,
+			handlers.MetricReductionRule,
+			handlers.InfraMonitoring,
 			handlers.GatewayHandler,
 			handlers.Fields,
 			handlers.AuthzHandler,
@@ -285,10 +311,16 @@ func NewAPIServerProviderFactories(orgGetter organization.Getter, authz authz.Au
 			handlers.ZeusHandler,
 			handlers.QuerierHandler,
 			handlers.ServiceAccountHandler,
+			modules.ServiceAccountGetter,
 			handlers.RegistryHandler,
 			handlers.CloudIntegrationHandler,
 			handlers.RuleStateHistory,
+			handlers.SpanMapperHandler,
 			handlers.AlertmanagerHandler,
+			handlers.LLMPricingRuleHandler,
+			handlers.TraceDetail,
+			handlers.RulerHandler,
+			handlers.StatsHandler,
 		),
 	)
 }
@@ -318,6 +350,12 @@ func NewGlobalProviderFactories(identNConfig identn.Config) factory.NamedMap[fac
 func NewAuditorProviderFactories() factory.NamedMap[factory.ProviderFactory[auditor.Auditor, auditor.Config]] {
 	return factory.MustNewNamedMap(
 		noopauditor.NewFactory(),
+	)
+}
+
+func NewMeterReporterProviderFactories() factory.NamedMap[factory.ProviderFactory[meterreporter.Reporter, meterreporter.Config]] {
+	return factory.MustNewNamedMap(
+		noopmeterreporter.NewFactory(),
 	)
 }
 

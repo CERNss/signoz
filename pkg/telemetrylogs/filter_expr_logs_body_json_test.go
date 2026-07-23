@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SigNoz/signoz/pkg/flagger/flaggertest"
 	"github.com/SigNoz/signoz/pkg/instrumentation/instrumentationtest"
 	"github.com/SigNoz/signoz/pkg/querybuilder"
 	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
@@ -15,8 +16,9 @@ import (
 
 // TestFilterExprLogsBodyJSON tests a comprehensive set of query patterns for body JSON search.
 func TestFilterExprLogsBodyJSON(t *testing.T) {
-	fm := NewFieldMapper()
-	cb := NewConditionBuilder(fm)
+	fl := flaggertest.New(t)
+	fm := NewFieldMapper(fl)
+	cb := NewConditionBuilder(fm, fl)
 	// Define a comprehensive set of field keys to support all test cases
 	releaseTime := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
 	keys := buildCompleteFieldKeyMap(releaseTime)
@@ -27,10 +29,7 @@ func TestFilterExprLogsBodyJSON(t *testing.T) {
 		FieldMapper:      fm,
 		ConditionBuilder: cb,
 		FieldKeys:        keys,
-		FullTextColumn: &telemetrytypes.TelemetryFieldKey{
-			Name: "body",
-		},
-		JsonKeyToKey: GetBodyJSONKey,
+		FullTextColumn:   &telemetrytypes.TelemetryFieldKey{Name: "body"},
 	}
 
 	testCases := []struct {
@@ -45,32 +44,64 @@ func TestFilterExprLogsBodyJSON(t *testing.T) {
 			category:              "json",
 			query:                 "has(body.requestor_list[*], 'index_service')",
 			shouldPass:            true,
-			expectedQuery:         `WHERE has(JSONExtract(JSON_QUERY(body, '$."requestor_list"[*]'), 'Array(String)'), ?)`,
-			expectedArgs:          []any{"index_service"},
+			expectedQuery:         `WHERE (has(JSONExtract(JSON_QUERY(body, '$."requestor_list"[*]'), 'Array(Nullable(String))'), ?) OR ifNull((JSON_VALUE(body, '$."requestor_list"') = ? AND JSONType(body, 'requestor_list') NOT IN ('Array', 'Object', 'Null')), false))`,
+			expectedArgs:          []any{"index_service", "index_service"},
 			expectedErrorContains: "",
 		},
 		{
 			category:              "json",
 			query:                 "has(body.int_numbers[*], 2)",
 			shouldPass:            true,
-			expectedQuery:         `WHERE has(JSONExtract(JSON_QUERY(body, '$."int_numbers"[*]'), 'Array(Float64)'), ?)`,
-			expectedArgs:          []any{float64(2)},
+			expectedQuery:         `WHERE (has(JSONExtract(JSON_QUERY(body, '$."int_numbers"[*]'), 'Array(Nullable(Float64))'), ?) OR ifNull((JSONExtract(JSON_VALUE(body, '$."int_numbers"'), 'Nullable(Float64)') = ? AND JSONType(body, 'int_numbers') NOT IN ('Array', 'Object', 'Null')), false))`,
+			expectedArgs:          []any{float64(2), float64(2)},
 			expectedErrorContains: "",
 		},
 		{
 			category:              "json",
 			query:                 "has(body.bool[*], true)",
 			shouldPass:            true,
-			expectedQuery:         `WHERE has(JSONExtract(JSON_QUERY(body, '$."bool"[*]'), 'Array(Bool)'), ?)`,
-			expectedArgs:          []any{true},
+			expectedQuery:         `WHERE (has(JSONExtract(JSON_QUERY(body, '$."bool"[*]'), 'Array(Nullable(String))'), ?) OR ifNull((JSON_VALUE(body, '$."bool"') = ? AND JSONType(body, 'bool') NOT IN ('Array', 'Object', 'Null')), false))`,
+			expectedArgs:          []any{"true", "true"},
 			expectedErrorContains: "",
 		},
 		{
 			category:              "json",
 			query:                 "NOT has(body.nested_num[*].float_nums[*], 2.2)",
 			shouldPass:            true,
-			expectedQuery:         `WHERE NOT (has(JSONExtract(JSON_QUERY(body, '$."nested_num"[*]."float_nums"[*]'), 'Array(Float64)'), ?))`,
+			expectedQuery:         `WHERE NOT (has(JSONExtract(JSON_QUERY(body, '$."nested_num"[*]."float_nums"[*]'), 'Array(Nullable(Float64))'), ?))`,
 			expectedArgs:          []any{float64(2.2)},
+			expectedErrorContains: "",
+		},
+		{
+			category:              "json",
+			query:                 "has(body.tags, 'production')",
+			shouldPass:            true,
+			expectedQuery:         `WHERE (has(JSONExtract(JSON_QUERY(body, '$."tags"[*]'), 'Array(Nullable(String))'), ?) OR ifNull((JSON_VALUE(body, '$."tags"') = ? AND JSONType(body, 'tags') NOT IN ('Array', 'Object', 'Null')), false))`,
+			expectedArgs:          []any{"production", "production"},
+			expectedErrorContains: "",
+		},
+		{
+			category:              "json",
+			query:                 "hasAny(body.tags, ['critical', 'test'])",
+			shouldPass:            true,
+			expectedQuery:         `WHERE (hasAny(JSONExtract(JSON_QUERY(body, '$."tags"[*]'), 'Array(Nullable(String))'), ?) OR ifNull((JSON_VALUE(body, '$."tags"') IN (?, ?) AND JSONType(body, 'tags') NOT IN ('Array', 'Object', 'Null')), false))`,
+			expectedArgs:          []any{[]any{"critical", "test"}, "critical", "test"},
+			expectedErrorContains: "",
+		},
+		{
+			category:              "json",
+			query:                 "hasAll(body.tags, ['production', 'web'])",
+			shouldPass:            true,
+			expectedQuery:         `WHERE (hasAll(JSONExtract(JSON_QUERY(body, '$."tags"[*]'), 'Array(Nullable(String))'), ?) OR ifNull(((JSON_VALUE(body, '$."tags"') = ? AND JSON_VALUE(body, '$."tags"') = ?) AND JSONType(body, 'tags') NOT IN ('Array', 'Object', 'Null')), false))`,
+			expectedArgs:          []any{[]any{"production", "web"}, "production", "web"},
+			expectedErrorContains: "",
+		},
+		{
+			category:              "json",
+			query:                 "has(body.ids, \"200\")",
+			shouldPass:            true,
+			expectedQuery:         `WHERE (has(JSONExtract(JSON_QUERY(body, '$."ids"[*]'), 'Array(Nullable(Int64))'), ?) OR ifNull((JSONExtract(JSON_VALUE(body, '$."ids"'), 'Nullable(Int64)') = ? AND JSONType(body, 'ids') NOT IN ('Array', 'Object', 'Null')), false))`,
+			expectedArgs:          []any{int64(200), int64(200)},
 			expectedErrorContains: "",
 		},
 		{
@@ -173,7 +204,7 @@ func TestFilterExprLogsBodyJSON(t *testing.T) {
 					return
 				}
 
-				if clause == nil {
+				if clause.IsEmpty() {
 					t.Errorf("Expected clause for query: %s\n", tc.query)
 					return
 				}

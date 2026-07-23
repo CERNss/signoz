@@ -1,8 +1,9 @@
 import { CircleAlert, RefreshCw } from '@signozhq/icons';
-import { Checkbox, Select } from 'antd';
+import { Select } from 'antd';
+import { Checkbox } from '@signozhq/ui/checkbox';
 import { convertToApiError } from 'api/ErrorResponseHandlerForGeneratedAPIs';
 import { useListRoles } from 'api/generated/services/role';
-import type { AuthtypesRoleDTO } from 'api/generated/services/sigNoz.schemas';
+import type { AuthtypesGettableRoleDTO } from 'api/generated/services/sigNoz.schemas';
 import cx from 'classnames';
 import APIError from 'types/api/error';
 import { popupContainer } from 'utils/selectPopupContainer';
@@ -15,7 +16,7 @@ export interface RoleOption {
 }
 
 export function useRoles(): {
-	roles: AuthtypesRoleDTO[];
+	roles: AuthtypesGettableRoleDTO[];
 	isLoading: boolean;
 	isError: boolean;
 	error: APIError | undefined;
@@ -31,10 +32,13 @@ export function useRoles(): {
 	};
 }
 
-export function getRoleOptions(roles: AuthtypesRoleDTO[]): RoleOption[] {
+export function getRoleOptions(
+	roles: AuthtypesGettableRoleDTO[],
+	valueField: 'id' | 'name',
+): RoleOption[] {
 	return roles.map((role) => ({
 		label: role.name ?? '',
-		value: role.id ?? '',
+		value: role[valueField] ?? '',
 	}));
 }
 
@@ -75,11 +79,13 @@ interface BaseProps {
 	placeholder?: string;
 	className?: string;
 	getPopupContainer?: (trigger: HTMLElement) => HTMLElement;
-	roles?: AuthtypesRoleDTO[];
+	roles?: AuthtypesGettableRoleDTO[];
 	loading?: boolean;
 	isError?: boolean;
 	error?: APIError;
 	onRefetch?: () => void;
+	disabled?: boolean;
+	valueField?: 'id' | 'name';
 }
 
 interface SingleProps extends BaseProps {
@@ -111,7 +117,7 @@ function RolesSelect(props: RolesSelectProps): JSX.Element {
 	});
 
 	const roles = externalRoles ?? data?.data ?? [];
-	const options = getRoleOptions(roles);
+	const options = getRoleOptions(roles, props.valueField || 'id');
 
 	const {
 		mode,
@@ -123,6 +129,7 @@ function RolesSelect(props: RolesSelectProps): JSX.Element {
 		isError = internalError,
 		error = convertToApiError(internalErrorObj),
 		onRefetch = externalRoles === undefined ? internalRefetch : undefined,
+		disabled,
 	} = props;
 
 	const notFoundContent = isError ? (
@@ -142,15 +149,16 @@ function RolesSelect(props: RolesSelectProps): JSX.Element {
 				loading={loading}
 				notFoundContent={notFoundContent}
 				options={options}
+				optionFilterProp="label"
 				optionRender={(option): JSX.Element => (
-					<Checkbox
-						checked={value.includes(option.value as string)}
-						style={{ pointerEvents: 'none' }}
-					>
-						{option.label}
-					</Checkbox>
+					<div style={{ pointerEvents: 'none' }}>
+						<Checkbox value={value.includes(option.value as string)}>
+							{option.label}
+						</Checkbox>
+					</div>
 				)}
 				getPopupContainer={getPopupContainer}
+				disabled={disabled}
 			/>
 		);
 	}
@@ -159,6 +167,7 @@ function RolesSelect(props: RolesSelectProps): JSX.Element {
 	return (
 		<Select
 			id={id}
+			showSearch
 			value={value || undefined}
 			onChange={onChange}
 			placeholder={placeholder}
@@ -167,7 +176,9 @@ function RolesSelect(props: RolesSelectProps): JSX.Element {
 			loading={loading}
 			notFoundContent={notFoundContent}
 			options={options}
+			optionFilterProp="label"
 			getPopupContainer={getPopupContainer}
+			disabled={disabled}
 		/>
 	);
 }

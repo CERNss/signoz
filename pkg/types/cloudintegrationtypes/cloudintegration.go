@@ -61,7 +61,9 @@ type StorableCloudIntegrationService struct {
 // Following Service config types are only internally used to store service config in DB and use JSON snake case keys for backward compatibility.
 
 type StorableServiceConfig struct {
-	AWS *StorableAWSServiceConfig
+	AWS   *StorableAWSServiceConfig
+	Azure *StorableAzureServiceConfig
+	GCP   *StorableGCPServiceConfig
 }
 
 type StorableAWSServiceConfig struct {
@@ -77,6 +79,28 @@ type StorableAWSLogsServiceConfig struct {
 type StorableAWSMetricsServiceConfig struct {
 	Enabled bool `json:"enabled"`
 }
+
+type StorableAzureServiceConfig struct {
+	Logs    *StorableAzureLogsServiceConfig    `json:"logs,omitempty"`
+	Metrics *StorableAzureMetricsServiceConfig `json:"metrics,omitempty"`
+}
+
+type StorableAzureLogsServiceConfig struct {
+	Enabled bool `json:"enabled"`
+}
+
+type StorableAzureMetricsServiceConfig struct {
+	Enabled bool `json:"enabled"`
+}
+
+type StorableGCPServiceConfig struct {
+	Logs    *StorableGCPServiceLogsConfig    `json:"logs,omitempty"`
+	Metrics *StorableGCPServiceMetricsConfig `json:"metrics,omitempty"`
+}
+
+type StorableGCPServiceLogsConfig = GCPServiceLogsConfig
+
+type StorableGCPServiceMetricsConfig = GCPServiceMetricsConfig
 
 // Scan scans value from DB.
 func (r *StorableAgentReport) Scan(src any) error {
@@ -187,6 +211,54 @@ func newStorableServiceConfig(provider CloudProviderType, serviceID ServiceID, s
 		}
 
 		return &StorableServiceConfig{AWS: storableAWSServiceConfig}, nil
+	case CloudProviderTypeAzure:
+		storableAzureServiceConfig := new(StorableAzureServiceConfig)
+
+		if supportedSignals.Logs {
+			if serviceConfig.Azure.Logs == nil {
+				return nil, errors.NewInvalidInputf(ErrCodeCloudIntegrationInvalidConfig, "logs config is required for Azure service: %s", serviceID.StringValue())
+			}
+
+			storableAzureServiceConfig.Logs = &StorableAzureLogsServiceConfig{
+				Enabled: serviceConfig.Azure.Logs.Enabled,
+			}
+		}
+
+		if supportedSignals.Metrics {
+			if serviceConfig.Azure.Metrics == nil {
+				return nil, errors.NewInvalidInputf(ErrCodeCloudIntegrationInvalidConfig, "metrics config is required for Azure service: %s", serviceID.StringValue())
+			}
+
+			storableAzureServiceConfig.Metrics = &StorableAzureMetricsServiceConfig{
+				Enabled: serviceConfig.Azure.Metrics.Enabled,
+			}
+		}
+
+		return &StorableServiceConfig{Azure: storableAzureServiceConfig}, nil
+	case CloudProviderTypeGCP:
+		storableGCPServiceConfig := new(StorableGCPServiceConfig)
+
+		if supportedSignals.Logs {
+			if serviceConfig.GCP.Logs == nil {
+				return nil, errors.NewInvalidInputf(ErrCodeCloudIntegrationInvalidConfig, "logs config is required for GCP service: %s", serviceID.StringValue())
+			}
+
+			storableGCPServiceConfig.Logs = &StorableGCPServiceLogsConfig{
+				Enabled: serviceConfig.GCP.Logs.Enabled,
+			}
+		}
+
+		if supportedSignals.Metrics {
+			if serviceConfig.GCP.Metrics == nil {
+				return nil, errors.NewInvalidInputf(ErrCodeCloudIntegrationInvalidConfig, "metrics config is required for GCP service: %s", serviceID.StringValue())
+			}
+
+			storableGCPServiceConfig.Metrics = &StorableGCPServiceMetricsConfig{
+				Enabled: serviceConfig.GCP.Metrics.Enabled,
+			}
+		}
+
+		return &StorableServiceConfig{GCP: storableGCPServiceConfig}, nil
 	default:
 		return nil, errors.NewInvalidInputf(ErrCodeCloudProviderInvalidInput, "invalid cloud provider: %s", provider.StringValue())
 	}
@@ -201,6 +273,20 @@ func newStorableServiceConfigFromJSON(provider CloudProviderType, jsonStr string
 			return nil, errors.WrapInternalf(err, errors.CodeInternal, "couldn't parse AWS service config JSON")
 		}
 		return &StorableServiceConfig{AWS: awsConfig}, nil
+	case CloudProviderTypeAzure:
+		azureConfig := new(StorableAzureServiceConfig)
+		err := json.Unmarshal([]byte(jsonStr), azureConfig)
+		if err != nil {
+			return nil, errors.WrapInternalf(err, errors.CodeInternal, "couldn't parse Azure service config JSON")
+		}
+		return &StorableServiceConfig{Azure: azureConfig}, nil
+	case CloudProviderTypeGCP:
+		gcpConfig := new(StorableGCPServiceConfig)
+		err := json.Unmarshal([]byte(jsonStr), gcpConfig)
+		if err != nil {
+			return nil, errors.WrapInternalf(err, errors.CodeInternal, "couldn't parse GCP service config JSON")
+		}
+		return &StorableServiceConfig{GCP: gcpConfig}, nil
 	default:
 		return nil, errors.NewInvalidInputf(ErrCodeCloudProviderInvalidInput, "invalid cloud provider: %s", provider.StringValue())
 	}
@@ -212,6 +298,20 @@ func (config *StorableServiceConfig) toJSON(provider CloudProviderType) ([]byte,
 		jsonBytes, err := json.Marshal(config.AWS)
 		if err != nil {
 			return nil, errors.WrapInternalf(err, errors.CodeInternal, "couldn't serialize AWS service config to JSON")
+		}
+
+		return jsonBytes, nil
+	case CloudProviderTypeAzure:
+		jsonBytes, err := json.Marshal(config.Azure)
+		if err != nil {
+			return nil, errors.WrapInternalf(err, errors.CodeInternal, "couldn't serialize Azure service config to JSON")
+		}
+
+		return jsonBytes, nil
+	case CloudProviderTypeGCP:
+		jsonBytes, err := json.Marshal(config.GCP)
+		if err != nil {
+			return nil, errors.WrapInternalf(err, errors.CodeInternal, "couldn't serialize GCP service config to JSON")
 		}
 
 		return jsonBytes, nil

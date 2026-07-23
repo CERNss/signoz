@@ -22,7 +22,7 @@ RUN set -eu; \
     done
 
 COPY ./target/${OS}-${ARCH}/signoz-community /root/signoz-community
-COPY ./templates/email /root/templates
+COPY ./templates /root/templates
 COPY frontend/build/ /etc/signoz/web/
 
 RUN chmod 755 /root /root/signoz-community

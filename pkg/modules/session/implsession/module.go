@@ -9,8 +9,10 @@ import (
 	"time"
 
 	"github.com/SigNoz/signoz/pkg/authn"
+	"github.com/SigNoz/signoz/pkg/authz"
 	"github.com/SigNoz/signoz/pkg/errors"
 	"github.com/SigNoz/signoz/pkg/factory"
+	"github.com/SigNoz/signoz/pkg/global"
 	"github.com/SigNoz/signoz/pkg/modules/authdomain"
 	"github.com/SigNoz/signoz/pkg/modules/organization"
 	"github.com/SigNoz/signoz/pkg/modules/session"
@@ -22,24 +24,28 @@ import (
 )
 
 type module struct {
-	settings   factory.ScopedProviderSettings
-	authNs     map[authtypes.AuthNProvider]authn.AuthN
-	userSetter user.Setter
-	userGetter user.Getter
-	authDomain authdomain.Module
-	tokenizer  tokenizer.Tokenizer
-	orgGetter  organization.Getter
+	settings     factory.ScopedProviderSettings
+	authNs       map[authtypes.AuthNProvider]authn.AuthN
+	userSetter   user.Setter
+	userGetter   user.Getter
+	authDomain   authdomain.Module
+	tokenizer    tokenizer.Tokenizer
+	orgGetter    organization.Getter
+	authz        authz.AuthZ
+	globalConfig global.Config
 }
 
-func NewModule(providerSettings factory.ProviderSettings, authNs map[authtypes.AuthNProvider]authn.AuthN, userSetter user.Setter, userGetter user.Getter, authDomain authdomain.Module, tokenizer tokenizer.Tokenizer, orgGetter organization.Getter) session.Module {
+func NewModule(providerSettings factory.ProviderSettings, authNs map[authtypes.AuthNProvider]authn.AuthN, userSetter user.Setter, userGetter user.Getter, authDomain authdomain.Module, tokenizer tokenizer.Tokenizer, orgGetter organization.Getter, authz authz.AuthZ, globalConfig global.Config) session.Module {
 	return &module{
-		settings:   factory.NewScopedProviderSettings(providerSettings, "github.com/SigNoz/signoz/pkg/modules/session/implsession"),
-		authNs:     authNs,
-		userSetter: userSetter,
-		userGetter: userGetter,
-		authDomain: authDomain,
-		tokenizer:  tokenizer,
-		orgGetter:  orgGetter,
+		settings:     factory.NewScopedProviderSettings(providerSettings, "github.com/SigNoz/signoz/pkg/modules/session/implsession"),
+		authNs:       authNs,
+		userSetter:   userSetter,
+		userGetter:   userGetter,
+		authDomain:   authDomain,
+		tokenizer:    tokenizer,
+		orgGetter:    orgGetter,
+		authz:        authz,
+		globalConfig: globalConfig,
 	}
 }
 
@@ -113,6 +119,10 @@ func (module *module) GetSessionContext(ctx context.Context, email valuer.Email,
 
 func (module *module) GetSessionSSOContext(ctx context.Context, siteURL *url.URL) (*authtypes.SessionSSOContext, error) {
 	context := authtypes.NewSessionSSOContext()
+
+	if !module.globalConfig.IsOriginAllowed(siteURL) {
+		return nil, errors.Newf(errors.TypeInvalidInput, global.ErrCodeOriginNotAllowed, "ref %q is not an allowed origin", siteURL.String())
+	}
 
 	orgs, err := module.orgGetter.ListByOwnedKeyRange(ctx)
 	if err != nil {
@@ -207,14 +217,26 @@ func (module *module) CreateCallbackAuthNSession(ctx context.Context, authNProvi
 		return "", err
 	}
 
+	if callbackIdentity.State.URL.Host != "" && !module.globalConfig.IsOriginAllowed(callbackIdentity.State.URL) {
+		return "", errors.Newf(errors.TypeForbidden, global.ErrCodeOriginNotAllowed, "state redirect %q is not an allowed origin", callbackIdentity.State.URL.String())
+	}
+
 	authDomain, err := module.authDomain.GetByOrgIDAndID(ctx, callbackIdentity.OrgID, callbackIdentity.State.DomainID)
 	if err != nil {
 		return "", err
 	}
 
 	roleMapping := authDomain.AuthDomainConfig().RoleMapping
-	role := roleMapping.NewRoleFromCallbackIdentity(callbackIdentity)
-	signozManagedRole := authtypes.MustGetSigNozManagedRoleFromExistingRole(role)
+
+	roleAttributeExists := false
+	if roleMapping != nil && roleMapping.UseRoleAttribute && callbackIdentity.Role != "" {
+		_, err := module.authz.GetByOrgIDAndName(ctx, callbackIdentity.OrgID, authtypes.NormalizeRoleName(callbackIdentity.Role))
+		if err == nil {
+			roleAttributeExists = true
+		}
+	}
+
+	roleNames := roleMapping.NewRolesFromCallbackIdentity(callbackIdentity, roleAttributeExists)
 
 	var signedInUser *types.User
 
@@ -229,7 +251,7 @@ func (module *module) CreateCallbackAuthNSession(ctx context.Context, authNProvi
 			return "", err
 		}
 
-		signedInUser, err = module.userSetter.GetOrCreateUser(ctx, newUser, user.WithRoleNames([]string{signozManagedRole}))
+		signedInUser, err = module.userSetter.GetOrCreateUser(ctx, newUser, user.WithRoleNames(roleNames))
 		if err != nil {
 			return "", err
 		}
@@ -272,6 +294,10 @@ func (module *module) DeleteSession(ctx context.Context, accessToken string) err
 }
 
 func (module *module) GetSessionLogoutContext(ctx context.Context, siteURL *url.URL) (*authtypes.SessionLogoutContext, error) {
+	if !module.globalConfig.IsOriginAllowed(siteURL) {
+		return nil, errors.Newf(errors.TypeInvalidInput, global.ErrCodeOriginNotAllowed, "ref %q is not an allowed origin", siteURL.String())
+	}
+
 	claims, err := authtypes.ClaimsFromContext(ctx)
 	if err != nil {
 		return nil, err
@@ -337,6 +363,10 @@ func (module *module) getOrgSessionContext(ctx context.Context, org *types.Organ
 	provider, err := getProvider[authn.CallbackAuthN](authDomain.AuthDomainConfig().AuthNProvider, module.authNs)
 	if err != nil {
 		return nil, err
+	}
+
+	if !module.globalConfig.IsOriginAllowed(siteURL) {
+		return nil, errors.Newf(errors.TypeInvalidInput, global.ErrCodeOriginNotAllowed, "ref %q is not an allowed origin", siteURL.String())
 	}
 
 	loginURL, err := provider.LoginURL(ctx, siteURL, authDomain)

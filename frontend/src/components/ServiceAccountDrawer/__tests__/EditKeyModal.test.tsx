@@ -1,12 +1,23 @@
-import { toast } from '@signozhq/sonner';
+import { toast } from '@signozhq/ui/sonner';
 import type { ServiceaccounttypesGettableFactorAPIKeyDTO } from 'api/generated/services/sigNoz.schemas';
+import { setupAuthzAdmin } from 'lib/authz/utils/authz-test-utils';
 import { rest, server } from 'mocks-server/server';
 import { NuqsTestingAdapter } from 'nuqs/adapters/testing';
 import { render, screen, userEvent, waitFor } from 'tests/test-utils';
 
 import EditKeyModal from '../EditKeyModal';
 
-jest.mock('@signozhq/sonner', () => ({
+jest.mock('lib/authz/components/AuthZTooltip/AuthZTooltip', () => ({
+	__esModule: true,
+	default: ({
+		children,
+	}: {
+		children: React.ReactElement;
+	}): React.ReactElement => children,
+}));
+
+jest.mock('@signozhq/ui/sonner', () => ({
+	...jest.requireActual('@signozhq/ui/sonner'),
 	toast: { success: jest.fn(), error: jest.fn() },
 }));
 
@@ -18,7 +29,7 @@ const mockKey: ServiceaccounttypesGettableFactorAPIKeyDTO = {
 	id: 'key-1',
 	name: 'Original Key Name',
 	expiresAt: 0,
-	lastObservedAt: null as any,
+	lastObservedAt: null as unknown as string,
 	serviceAccountId: 'sa-1',
 };
 
@@ -28,9 +39,14 @@ function renderModal(
 		account: 'sa-1',
 		'edit-key': 'key-1',
 	},
+	onUrlUpdate?: jest.Mock,
 ): ReturnType<typeof render> {
 	return render(
-		<NuqsTestingAdapter searchParams={searchParams} hasMemory>
+		<NuqsTestingAdapter
+			searchParams={searchParams}
+			hasMemory
+			onUrlUpdate={onUrlUpdate}
+		>
 			<EditKeyModal keyItem={keyItem} />
 		</NuqsTestingAdapter>,
 	);
@@ -46,6 +62,7 @@ describe('EditKeyModal (URL-controlled)', () => {
 			rest.delete(SA_KEY_ENDPOINT, (_, res, ctx) =>
 				res(ctx.status(200), ctx.json({ status: 'success', data: {} })),
 			),
+			setupAuthzAdmin(),
 		);
 	});
 
@@ -56,17 +73,15 @@ describe('EditKeyModal (URL-controlled)', () => {
 	it('renders nothing when edit-key param is absent', () => {
 		renderModal(null, { account: 'sa-1' });
 
-		expect(
-			screen.queryByRole('dialog', { name: /Edit Key Details/i }),
-		).not.toBeInTheDocument();
+		expect(screen.queryByTestId('edit-key-modal')).not.toBeInTheDocument();
 	});
 
 	it('renders key data from prop when edit-key param is set', async () => {
 		renderModal();
 
-		expect(
-			await screen.findByDisplayValue('Original Key Name'),
-		).toBeInTheDocument();
+		await expect(
+			screen.findByDisplayValue('Original Key Name'),
+		).resolves.toBeInTheDocument();
 		expect(screen.getByRole('button', { name: /Save Changes/i })).toBeDisabled();
 	});
 
@@ -81,29 +96,39 @@ describe('EditKeyModal (URL-controlled)', () => {
 		await user.click(screen.getByRole('button', { name: /Save Changes/i }));
 
 		await waitFor(() => {
-			expect(mockToast.success).toHaveBeenCalledWith(
-				'Key updated successfully',
-				expect.anything(),
-			);
+			expect(mockToast.success).toHaveBeenCalledWith('Key updated successfully');
 		});
 
 		await waitFor(() => {
-			expect(
-				screen.queryByRole('dialog', { name: /Edit Key Details/i }),
-			).not.toBeInTheDocument();
+			expect(screen.queryByTestId('edit-key-modal')).not.toBeInTheDocument();
 		});
 	});
 
 	it('cancel clears edit-key param and closes modal', async () => {
 		const user = userEvent.setup({ pointerEventsCheck: 0 });
-		renderModal();
+		const onUrlUpdate = jest.fn();
+		renderModal(mockKey, undefined, onUrlUpdate);
 
 		await screen.findByDisplayValue('Original Key Name');
 		await user.click(screen.getByRole('button', { name: /Cancel/i }));
 
-		expect(
-			screen.queryByRole('dialog', { name: /Edit Key Details/i }),
-		).not.toBeInTheDocument();
+		await waitFor(() => {
+			expect(onUrlUpdate).toHaveBeenCalled();
+		});
+
+		const latestUrlUpdate =
+			onUrlUpdate.mock.calls[onUrlUpdate.mock.calls.length - 1]?.[0];
+		expect(latestUrlUpdate).toStrictEqual(
+			expect.objectContaining({
+				queryString: expect.any(String),
+			}),
+		);
+		expect(latestUrlUpdate.queryString).toContain('account=sa-1');
+		expect(latestUrlUpdate.queryString).not.toContain('edit-key=');
+
+		await waitFor(() => {
+			expect(screen.queryByTestId('edit-key-modal')).not.toBeInTheDocument();
+		});
 	});
 
 	it('revoke flow: clicking Revoke Key shows confirmation inside same dialog', async () => {
@@ -114,9 +139,7 @@ describe('EditKeyModal (URL-controlled)', () => {
 		await user.click(screen.getByRole('button', { name: /Revoke Key/i }));
 
 		// Same dialog, now showing revoke confirmation
-		expect(
-			await screen.findByRole('dialog', { name: /Revoke Original Key Name/i }),
-		).toBeInTheDocument();
+		expect(screen.getByTestId('edit-key-modal')).toBeInTheDocument();
 		expect(
 			screen.getByText(/Revoking this key will permanently invalidate it/i),
 		).toBeInTheDocument();
@@ -135,16 +158,11 @@ describe('EditKeyModal (URL-controlled)', () => {
 		await user.click(confirmBtn);
 
 		await waitFor(() => {
-			expect(mockToast.success).toHaveBeenCalledWith(
-				'Key revoked successfully',
-				expect.anything(),
-			);
+			expect(mockToast.success).toHaveBeenCalledWith('Key revoked successfully');
 		});
 
 		await waitFor(() => {
-			expect(
-				screen.queryByRole('dialog', { name: /Edit Key Details/i }),
-			).not.toBeInTheDocument();
+			expect(screen.queryByTestId('edit-key-modal')).not.toBeInTheDocument();
 		});
 	});
 });

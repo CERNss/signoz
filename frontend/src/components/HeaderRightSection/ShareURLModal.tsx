@@ -4,15 +4,18 @@ import { useSelector } from 'react-redux';
 import { matchPath, useLocation } from 'react-router-dom';
 import { useCopyToClipboard } from 'react-use';
 import { Color } from '@signozhq/design-tokens';
-import { Button, Switch, Typography } from 'antd';
+import { Button } from 'antd';
+import { Switch } from '@signozhq/ui/switch';
+import { Typography } from '@signozhq/ui/typography';
 import logEvent from 'api/common/logEvent';
 import { QueryParams } from 'constants/query';
 import ROUTES from 'constants/routes';
 import useUrlQuery from 'hooks/useUrlQuery';
 import GetMinMax from 'lib/getMinMax';
-import { Check, Info, Link2 } from 'lucide-react';
+import { Check, Info, Link2 } from '@signozhq/icons';
 import { AppState } from 'store/reducers';
 import { GlobalReducer } from 'types/reducer/globalTime';
+import { getAbsoluteUrl } from 'utils/basePath';
 
 const routesToBeSharedWithTime = [
 	ROUTES.LOGS_EXPLORER,
@@ -21,7 +24,22 @@ const routesToBeSharedWithTime = [
 	ROUTES.METER_EXPLORER,
 ];
 
-function ShareURLModal(): JSX.Element {
+/**
+ * An optional, page-specific toggle in the share dialog (e.g. a dashboard's
+ * "Include variables"). When enabled, `apply` mutates the URL params that go into
+ * the shared link. Keeps this shared modal generic — the page owns what it adds.
+ */
+export interface ShareURLExtraOption {
+	label: string;
+	defaultEnabled?: boolean;
+	apply: (params: URLSearchParams) => void;
+}
+
+interface ShareURLModalProps {
+	extraOption?: ShareURLExtraOption;
+}
+
+function ShareURLModal({ extraOption }: ShareURLModalProps): JSX.Element {
 	const urlQuery = useUrlQuery();
 	const location = useLocation();
 	const { selectedTime } = useSelector<AppState, GlobalReducer>(
@@ -30,6 +48,9 @@ function ShareURLModal(): JSX.Element {
 
 	const [enableAbsoluteTime, setEnableAbsoluteTime] = useState(
 		selectedTime !== 'custom',
+	);
+	const [enableExtraOption, setEnableExtraOption] = useState(
+		extraOption?.defaultEnabled ?? false,
 	);
 
 	const startTime = urlQuery.get(QueryParams.startTime);
@@ -80,18 +101,19 @@ function ShareURLModal(): JSX.Element {
 
 				urlQuery.delete(QueryParams.relativeTime);
 
-				currentUrl = `${window.location.origin}${
-					location.pathname
-				}?${urlQuery.toString()}`;
+				currentUrl = getAbsoluteUrl(`${location.pathname}?${urlQuery.toString()}`);
 			} else {
 				urlQuery.delete(QueryParams.startTime);
 				urlQuery.delete(QueryParams.endTime);
 
 				urlQuery.set(QueryParams.relativeTime, selectedTime);
-				currentUrl = `${window.location.origin}${
-					location.pathname
-				}?${urlQuery.toString()}`;
+				currentUrl = getAbsoluteUrl(`${location.pathname}?${urlQuery.toString()}`);
 			}
+		}
+
+		if (extraOption && enableExtraOption) {
+			extraOption.apply(urlQuery);
+			currentUrl = getAbsoluteUrl(`${location.pathname}?${urlQuery.toString()}`);
 		}
 
 		return currentUrl;
@@ -127,9 +149,8 @@ function ShareURLModal(): JSX.Element {
 								<Info size={14} color={Color.BG_AMBER_600} />
 							)}
 							<Switch
-								checked={enableAbsoluteTime}
+								value={enableAbsoluteTime}
 								disabled={!isValidateRelativeTime}
-								size="small"
 								onChange={(): void => {
 									setEnableAbsoluteTime((prev) => !prev);
 								}}
@@ -143,6 +164,20 @@ function ShareURLModal(): JSX.Element {
 						</div>
 					)}
 				</>
+			)}
+
+			{extraOption && (
+				<div className="absolute-relative-time-toggler-container">
+					<Typography.Text className="absolute-relative-time-toggler-label">
+						{extraOption.label}
+					</Typography.Text>
+					<div className="absolute-relative-time-toggler">
+						<Switch
+							value={enableExtraOption}
+							onChange={(): void => setEnableExtraOption((prev) => !prev)}
+						/>
+					</div>
+				</div>
 			)}
 
 			<div className="share-link">

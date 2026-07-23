@@ -55,9 +55,10 @@ export function getColorForThreshold(thresholdLabel: string): string {
 	return getRandomColor();
 }
 
-export function parseGoTime(
-	input: string,
-): { time: number; unit: UniversalYAxisUnit } {
+export function parseGoTime(input: string): {
+	time: number;
+	unit: UniversalYAxisUnit;
+} {
 	const regex = /(\d+)([hms])/g;
 	const matches = [...input.matchAll(regex)];
 
@@ -237,6 +238,13 @@ export function getAdvancedOptionsStateFromAlertDef(
 	};
 }
 
+// Condition-alias normalizers live in a leaf module (they depend only on the
+// enums) so `context/index` can consume them without an index↔utils cycle.
+export {
+	normalizeOperator,
+	normalizeMatchType,
+} from './context/conditionNormalizers';
+
 export function getThresholdStateFromAlertDef(
 	alertDef: PostableAlertRuleV2,
 ): AlertThresholdState {
@@ -254,11 +262,9 @@ export function getThresholdStateFromAlertDef(
 			})) || [],
 		selectedQuery: alertDef.condition.selectedQueryName || '',
 		operator:
-			(alertDef.condition.thresholds?.spec[0].op as AlertThresholdOperator) ||
-			AlertThresholdOperator.IS_ABOVE,
+			alertDef.condition.thresholds?.spec[0].op || AlertThresholdOperator.IS_ABOVE,
 		matchType:
-			(alertDef.condition.thresholds?.spec[0]
-				.matchType as AlertThresholdMatchType) ||
+			alertDef.condition.thresholds?.spec[0].matchType ||
 			AlertThresholdMatchType.AT_LEAST_ONCE,
 	};
 }
@@ -289,9 +295,8 @@ export function getCreateAlertLocalStateFromAlertDef(
 
 	const evaluationWindowState = getEvaluationWindowStateFromAlertDef(alertDef);
 
-	const notificationSettingsState = getNotificationSettingsStateFromAlertDef(
-		alertDef,
-	);
+	const notificationSettingsState =
+		getNotificationSettingsStateFromAlertDef(alertDef);
 
 	return {
 		basic: basicAlertState,

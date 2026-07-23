@@ -12,6 +12,7 @@ import (
 	"github.com/SigNoz/signoz/pkg/modules/serviceaccount"
 	"github.com/SigNoz/signoz/pkg/types/authtypes"
 	"github.com/SigNoz/signoz/pkg/types/cachetypes"
+	"github.com/SigNoz/signoz/pkg/types/coretypes"
 	"github.com/SigNoz/signoz/pkg/types/serviceaccounttypes"
 	"github.com/SigNoz/signoz/pkg/valuer"
 )
@@ -110,19 +111,19 @@ func (module *module) Update(ctx context.Context, orgID valuer.UUID, input *serv
 	return nil
 }
 
-func (module *module) SetRole(ctx context.Context, orgID valuer.UUID, id valuer.UUID, roleID valuer.UUID) error {
+func (module *module) SetRole(ctx context.Context, orgID valuer.UUID, id valuer.UUID, roleID valuer.UUID) (*serviceaccounttypes.ServiceAccountRole, error) {
 	role, err := module.authz.Get(ctx, orgID, roleID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	return module.setRole(ctx, orgID, id, role)
 }
 
-func (module *module) SetRoleByName(ctx context.Context, orgID valuer.UUID, id valuer.UUID, name string) error {
+func (module *module) SetRoleByName(ctx context.Context, orgID valuer.UUID, id valuer.UUID, name string) (*serviceaccounttypes.ServiceAccountRole, error) {
 	role, err := module.authz.GetByOrgIDAndName(ctx, orgID, name)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	return module.setRole(ctx, orgID, id, role)
@@ -144,7 +145,7 @@ func (module *module) DeleteRole(ctx context.Context, orgID valuer.UUID, id valu
 		return err
 	}
 
-	err = module.authz.Revoke(ctx, orgID, []string{role.Name}, authtypes.MustNewSubject(authtypes.TypeableServiceAccount, id.String(), orgID, nil))
+	err = module.authz.Revoke(ctx, orgID, []string{role.Name}, authtypes.MustNewSubject(coretypes.NewResourceServiceAccount(), id.String(), orgID, nil))
 	if err != nil {
 		return err
 	}
@@ -187,7 +188,7 @@ func (module *module) Delete(ctx context.Context, orgID valuer.UUID, id valuer.U
 		return err
 	}
 
-	err = module.authz.Revoke(ctx, orgID, serviceAccount.RoleNames(), authtypes.MustNewSubject(authtypes.TypeableServiceAccount, id.StringValue(), orgID, nil))
+	err = module.authz.Revoke(ctx, orgID, serviceAccount.RoleNames(), authtypes.MustNewSubject(coretypes.NewResourceServiceAccount(), id.StringValue(), orgID, nil))
 	if err != nil {
 		return err
 	}
@@ -375,40 +376,42 @@ func (module *module) getOrGetSetIdentity(ctx context.Context, serviceAccountID 
 	return identity, nil
 }
 
-func (module *module) setRole(ctx context.Context, orgID valuer.UUID, id valuer.UUID, role *authtypes.Role) error {
-	serviceAccount, err := module.GetWithRoles(ctx, orgID, id)
+func (module *module) setRole(ctx context.Context, orgID valuer.UUID, id valuer.UUID, role *authtypes.Role) (*serviceaccounttypes.ServiceAccountRole, error) {
+	serviceAccount, err := module.Get(ctx, orgID, id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	serviceAccountRole, err := serviceAccount.AddRole(role)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	err = module.authz.ModifyGrant(ctx, orgID, serviceAccount.RoleNames(), []string{role.Name}, authtypes.MustNewSubject(authtypes.TypeableServiceAccount, id.String(), orgID, nil))
+	err = module.authz.Grant(ctx, orgID, []string{role.Name}, authtypes.MustNewSubject(coretypes.NewResourceServiceAccount(), id.String(), orgID, nil))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	err = module.store.RunInTx(ctx, func(ctx context.Context) error {
-		err = module.store.DeleteServiceAccountRoles(ctx, serviceAccount.ID)
-		if err != nil {
-			return err
+	err = module.store.CreateServiceAccountRole(ctx, serviceAccountRole)
+	if err != nil {
+		if !errors.Ast(err, errors.TypeAlreadyExists) {
+			return nil, err
 		}
 
-		err = module.store.CreateServiceAccountRole(ctx, serviceAccountRole)
+		serviceAccountWithRoles, err := module.GetWithRoles(ctx, orgID, id)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		return nil
-	})
-	if err != nil {
-		return err
+		for _, existingServiceAccountRole := range serviceAccountWithRoles.ServiceAccountRoles {
+			if existingServiceAccountRole.RoleID == role.ID {
+				serviceAccountRole = existingServiceAccountRole
+				break
+			}
+		}
 	}
 
-	return nil
+	return serviceAccountRole, nil
 }
 
 func (module *module) trackUser(ctx context.Context, orgID string, userID string, event string, attrs map[string]any) {

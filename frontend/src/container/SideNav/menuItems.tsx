@@ -1,16 +1,13 @@
-import { RocketOutlined } from '@ant-design/icons';
-import { Style } from '@signozhq/design-tokens';
 import { MenuProps } from 'antd';
 import ROUTES from 'constants/routes';
 import {
 	ArrowUpRight,
-	BarChart2,
+	BarChart,
 	BellDot,
-	Binoculars,
 	Book,
 	Bot,
 	Boxes,
-	BugIcon,
+	Bug,
 	Building2,
 	ChartArea,
 	Cloudy,
@@ -27,33 +24,34 @@ import {
 	MessageSquareText,
 	Plus,
 	Receipt,
+	Rocket,
 	Route,
 	ScrollText,
 	Settings,
 	Shield,
 	Slack,
+	Sparkles,
 	Unplug,
 	User,
 	UserPlus,
 	Users,
-} from 'lucide-react';
+	Binoculars,
+	Brain,
+} from '@signozhq/icons';
 
 import {
 	SecondaryMenuItemKey,
 	SettingsNavSection,
 	SidebarItem,
 } from './sideNav.types';
+import { Style } from '@signozhq/design-tokens';
+import Noz from 'components/Noz/Noz';
+import { NOZ_TOOLTIP_TITLE } from 'components/Noz/Noz.constants';
 
 export const getStartedMenuItem = {
-	key: ROUTES.GET_STARTED,
-	label: 'Get Started',
-	icon: <RocketOutlined rotate={45} />,
-};
-
-export const getStartedV3MenuItem = {
 	key: ROUTES.GET_STARTED_WITH_CLOUD,
 	label: 'Get Started',
-	icon: <RocketOutlined rotate={45} />,
+	icon: <Rocket size={16} style={{ transform: 'rotate(45deg)' }} />,
 };
 
 export const homeMenuItem = {
@@ -63,7 +61,7 @@ export const homeMenuItem = {
 };
 
 export const inviteMemberMenuItem = {
-	key: `${ROUTES.ORG_SETTINGS}#invite-team-members`,
+	key: `${ROUTES.MEMBERS_SETTINGS}?invite=true`,
 	label: 'Invite Team Member',
 	icon: <UserPlus size={16} />,
 };
@@ -78,6 +76,24 @@ export const helpSupportMenuItem = {
 	key: ROUTES.SUPPORT,
 	label: 'Help & Support',
 	icon: <MessageSquareText size={16} />,
+};
+
+// The AI Assistant route is parameterized as `/ai-assistant/:conversationId`.
+// Sending the user to `/ai-assistant/new` triggers the page's fallback that
+// spawns a fresh conversation and replaces the URL with the real id, so
+// every sidenav click starts a new chat (the in-page history sidebar lets
+// the user resume earlier ones). Using a stable concrete path also lets
+// the active-highlight map below resolve `/ai-assistant/<any id>` back to
+// this menu key.
+const AI_ASSISTANT_NAV_KEY = '/ai-assistant/new';
+
+export const aiAssistantMenuItem = {
+	key: AI_ASSISTANT_NAV_KEY,
+	label: 'Noz',
+	icon: <Noz size={16} />,
+	itemKey: 'ai-assistant',
+	isEarlyAccess: true,
+	tooltip: NOZ_TOOLTIP_TITLE,
 };
 
 export const shortcutMenuItem = {
@@ -121,7 +137,7 @@ const menuItems: SidebarItem[] = [
 	{
 		key: ROUTES.METRICS_EXPLORER,
 		label: 'Metrics',
-		icon: <BarChart2 size={16} />,
+		icon: <BarChart size={16} />,
 		isNew: false,
 		itemKey: 'metrics',
 	},
@@ -165,7 +181,7 @@ const menuItems: SidebarItem[] = [
 	{
 		key: ROUTES.ALL_ERROR,
 		label: 'Exceptions',
-		icon: <BugIcon size={16} />,
+		icon: <Bug size={16} />,
 		itemKey: 'exceptions',
 	},
 	{
@@ -238,7 +254,7 @@ export const defaultMoreMenuItems: SidebarItem[] = [
 	{
 		key: ROUTES.METRICS_EXPLORER,
 		label: 'Metrics',
-		icon: <BarChart2 size={16} />,
+		icon: <BarChart size={16} />,
 		isNew: false,
 		isEnabled: true,
 		itemKey: 'metrics',
@@ -261,7 +277,7 @@ export const defaultMoreMenuItems: SidebarItem[] = [
 	{
 		key: ROUTES.ALL_ERROR,
 		label: 'Exceptions',
-		icon: <BugIcon size={16} />,
+		icon: <Bug size={16} />,
 		isEnabled: true,
 		itemKey: 'exceptions',
 	},
@@ -272,6 +288,16 @@ export const defaultMoreMenuItems: SidebarItem[] = [
 		isNew: true,
 		isEnabled: true,
 		itemKey: 'external-apis',
+	},
+	{
+		key: ROUTES.AI_OBSERVABILITY_OVERVIEW,
+		label: 'AI Observability',
+		icon: <Brain size={16} />,
+		isNew: true,
+		// Gated behind the `enable_ai_observability` feature flag in
+		// SideNav's `computedSecondaryMenuItems`; disabled by default.
+		isEnabled: false,
+		itemKey: 'ai-observability',
 	},
 	{
 		key: ROUTES.METER,
@@ -316,6 +342,7 @@ export const settingsNavSections: SettingsNavSection[] = [
 				isEnabled: true,
 				itemKey: 'account',
 			},
+			// TODO(@SigNoz/pulse-frontend): https://github.com/SigNoz/engineering-pod/issues/5323
 			{
 				key: ROUTES.ALL_CHANNELS,
 				label: 'Notification Channels',
@@ -337,6 +364,13 @@ export const settingsNavSections: SettingsNavSection[] = [
 				isEnabled: false,
 				itemKey: 'integrations',
 			},
+			{
+				key: ROUTES.MCP_SERVER,
+				label: 'MCP Server',
+				icon: <Sparkles size={16} />,
+				isEnabled: false,
+				itemKey: 'mcp-server',
+			},
 		],
 	},
 
@@ -350,6 +384,7 @@ export const settingsNavSections: SettingsNavSection[] = [
 				icon: <Shield size={16} />,
 				isEnabled: false,
 				itemKey: 'roles',
+				isBeta: true,
 			},
 			{
 				key: ROUTES.MEMBERS_SETTINGS,
@@ -368,7 +403,7 @@ export const settingsNavSections: SettingsNavSection[] = [
 			{
 				key: ROUTES.INGESTION_SETTINGS,
 				label: 'Ingestion',
-				icon: <RocketOutlined rotate={45} />,
+				icon: <Rocket size={16} style={{ transform: 'rotate(45deg)' }} />,
 				isEnabled: false,
 				itemKey: 'ingestion',
 			},
@@ -504,7 +539,7 @@ export const getUserSettingsDropdownMenuItems = ({
 						icon: <Shield size={14} color={Style.L1_FOREGROUND} />,
 						dataTestId: 'manage-license-nav-item',
 					},
-			  ]
+				]
 			: []),
 		{
 			key: 'keyboard-shortcuts',
@@ -529,7 +564,9 @@ export const getUserSettingsDropdownMenuItems = ({
 		},
 	].filter(Boolean);
 
-/** Mapping of some newly added routes and their corresponding active sidebar menu key */
+/** Mapping of some newly added routes and their corresponding active sidebar menu key
+    This is used to highlight the correct menu item when the user navigates to a new route
+**/
 export const NEW_ROUTES_MENU_ITEM_KEY_MAP: Record<string, string> = {
 	[ROUTES.TRACE]: ROUTES.TRACES_EXPLORER,
 	[ROUTES.TRACE_EXPLORER]: ROUTES.TRACES_EXPLORER,
@@ -539,6 +576,11 @@ export const NEW_ROUTES_MENU_ITEM_KEY_MAP: Record<string, string> = {
 		ROUTES.INFRASTRUCTURE_MONITORING_HOSTS,
 	[ROUTES.API_MONITORING_BASE]: ROUTES.API_MONITORING,
 	[ROUTES.MESSAGING_QUEUES_BASE]: ROUTES.MESSAGING_QUEUES_OVERVIEW,
+	[ROUTES.AI_OBSERVABILITY_BASE]: ROUTES.AI_OBSERVABILITY_OVERVIEW,
+	// `getActiveMenuKeyFromPath` strips the URL down to its first segment;
+	// `/ai-assistant/<id>` reduces to `/ai-assistant`, which we point back
+	// to the AI Assistant menu item's concrete key.
+	'/ai-assistant': AI_ASSISTANT_NAV_KEY,
 };
 
 export default menuItems;

@@ -41,6 +41,7 @@ import useUrlQuery from 'hooks/useUrlQuery';
 import { createIdFromObjectFields } from 'lib/createIdFromObjectFields';
 import { createNewBuilderItemName } from 'lib/newQueryBuilder/createNewBuilderItemName';
 import { getOperatorsBySourceAndPanelType } from 'lib/newQueryBuilder/getOperatorsBySourceAndPanelType';
+import { saveRecentQuery } from 'lib/recentQueries/saveRecentQuery';
 import { replaceIncorrectObjectFields } from 'lib/replaceIncorrectObjectFields';
 import { cloneDeep, get, isEqual, set } from 'lodash-es';
 import { BaseAutocompleteData } from 'types/api/queryBuilder/queryAutocompleteResponse';
@@ -110,10 +111,8 @@ export function QueryBuilderProvider({
 	const currentPathnameRef = useRef<string | null>(location.pathname);
 
 	// This is used to determine if the query was called from the handleRunQuery function - which means manual trigger from Stage and Run button
-	const [
-		calledFromHandleRunQuery,
-		setCalledFromHandleRunQuery,
-	] = useState<boolean>(false);
+	const [calledFromHandleRunQuery, setCalledFromHandleRunQuery] =
+		useState<boolean>(false);
 
 	const compositeQueryParam = useGetCompositeQueryParam();
 	const { queryType: queryTypeParam, ...queryState } =
@@ -244,9 +243,8 @@ export function QueryBuilderProvider({
 
 	const initQueryBuilderData = useCallback(
 		(query: Query): void => {
-			const { queryType: newQueryType, ...queryState } = prepareQueryBuilderData(
-				query,
-			);
+			const { queryType: newQueryType, ...queryState } =
+				prepareQueryBuilderData(query);
 
 			const type = newQueryType || EQueryType.QUERY_BUILDER;
 
@@ -690,7 +688,7 @@ export function QueryBuilderProvider({
 						...initialQueryBuilderFormTraceOperatorValues,
 						queryName: TRACE_OPERATOR_QUERY_NAME,
 						expression: trimmed,
-				  };
+					};
 
 			return {
 				...prevState,
@@ -710,7 +708,7 @@ export function QueryBuilderProvider({
 						...initialQueryBuilderFormTraceOperatorValues,
 						queryName: TRACE_OPERATOR_QUERY_NAME,
 						expression: trimmed,
-				  };
+					};
 
 			return {
 				...prevState,
@@ -945,7 +943,7 @@ export function QueryBuilderProvider({
 		(
 			query: Partial<Query>,
 			searchParams?: Record<string, unknown>,
-			redirectingUrl?: typeof ROUTES[keyof typeof ROUTES],
+			redirectingUrl?: (typeof ROUTES)[keyof typeof ROUTES],
 			shouldNotStringify?: boolean,
 			newTab?: boolean,
 		) => {
@@ -1034,6 +1032,8 @@ export function QueryBuilderProvider({
 		if (isExplorer) {
 			setCalledFromHandleRunQuery(true);
 		}
+		saveRecentQuery(currentQuery);
+
 		const currentQueryData = {
 			...currentQuery,
 			builder: {
@@ -1045,7 +1045,7 @@ export function QueryBuilderProvider({
 						expression:
 							item.filter?.expression.trim() === ''
 								? ''
-								: item.filter?.expression ?? '',
+								: (item.filter?.expression ?? ''),
 					},
 					filters: {
 						items: [],
@@ -1152,10 +1152,10 @@ export function QueryBuilderProvider({
 		[supersetQuery, queryType],
 	);
 
-	const isEnabledQuery = useMemo(() => !!stagedQuery && !!panelType, [
-		stagedQuery,
-		panelType,
-	]);
+	const isEnabledQuery = useMemo(
+		() => !!stagedQuery && !!panelType,
+		[stagedQuery, panelType],
+	);
 
 	const contextValues: QueryBuilderContextType = useMemo(
 		() => ({

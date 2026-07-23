@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/SigNoz/signoz/pkg/types/authtypes"
+	"github.com/SigNoz/signoz/pkg/types/coretypes"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
@@ -43,23 +44,23 @@ type AuditEvent struct {
 	TransportAttributes TransportAttributes
 }
 
+// NewAuditEvent builds an audit event from pre-built resource attributes (which
+// may carry attach/target context).
 func NewAuditEventFromHTTPRequest(
 	req *http.Request,
 	route string,
 	statusCode int,
 	traceID oteltrace.TraceID,
 	spanID oteltrace.SpanID,
-	action Action,
-	actionCategory ActionCategory,
+	action coretypes.Verb,
+	actionCategory coretypes.ActionCategory,
 	claims authtypes.Claims,
-	resourceID string,
-	resourceKind string,
+	resourceAttributes ResourceAttributes,
 	errorType string,
 	errorCode string,
 ) AuditEvent {
 	auditAttributes := NewAuditAttributesFromHTTP(statusCode, action, actionCategory, claims)
 	principalAttributes := NewPrincipalAttributesFromClaims(claims)
-	resourceAttributes := NewResourceAttributes(resourceID, resourceKind)
 	errorAttributes := NewErrorAttributes(errorType, errorCode)
 	transportAttributes := NewTransportAttributesFromHTTP(req, route, statusCode)
 
@@ -68,7 +69,7 @@ func NewAuditEventFromHTTPRequest(
 		TraceID:             traceID,
 		SpanID:              spanID,
 		Body:                newBody(auditAttributes, principalAttributes, resourceAttributes, errorAttributes),
-		EventName:           NewEventName(resourceAttributes.ResourceKind, auditAttributes.Action),
+		EventName:           NewEventName(resourceAttributes.Resource.Kind(), auditAttributes.Action),
 		AuditAttributes:     auditAttributes,
 		PrincipalAttributes: principalAttributes,
 		ResourceAttributes:  resourceAttributes,
@@ -88,7 +89,7 @@ func NewPLogsFromAuditEvents(events []AuditEvent, name string, version string, s
 	groups := make(map[resourceKey][]int)
 	order := make([]resourceKey, 0)
 	for i, event := range events {
-		key := resourceKey{kind: event.ResourceAttributes.ResourceKind, id: event.ResourceAttributes.ResourceID}
+		key := resourceKey{kind: event.ResourceAttributes.Resource.Kind().String(), id: event.ResourceAttributes.ResourceID}
 		if _, exists := groups[key]; !exists {
 			order = append(order, key)
 		}
@@ -100,7 +101,8 @@ func NewPLogsFromAuditEvents(events []AuditEvent, name string, version string, s
 		resourceAttrs := resourceLogs.Resource().Attributes()
 		resourceAttrs.PutStr(string(semconv.ServiceNameKey), name)
 		resourceAttrs.PutStr(string(semconv.ServiceVersionKey), version)
-		events[groups[key][0]].ResourceAttributes.PutResource(resourceAttrs)
+		head := events[groups[key][0]]
+		head.ResourceAttributes.PutResource(head.PrincipalAttributes.PrincipalOrgID, resourceAttrs)
 
 		scopeLogs := resourceLogs.ScopeLogs().AppendEmpty()
 		scopeLogs.Scope().SetName(scope)

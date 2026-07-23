@@ -1,12 +1,23 @@
-import { toast } from '@signozhq/sonner';
+import { toast } from '@signozhq/ui/sonner';
 import { ServiceaccounttypesGettableFactorAPIKeyDTO } from 'api/generated/services/sigNoz.schemas';
+import { setupAuthzAdmin } from 'lib/authz/utils/authz-test-utils';
 import { rest, server } from 'mocks-server/server';
 import { NuqsTestingAdapter } from 'nuqs/adapters/testing';
 import { render, screen, userEvent, waitFor } from 'tests/test-utils';
 
 import KeysTab from '../KeysTab';
 
-jest.mock('@signozhq/sonner', () => ({
+jest.mock('lib/authz/components/AuthZTooltip/AuthZTooltip', () => ({
+	__esModule: true,
+	default: ({
+		children,
+	}: {
+		children: React.ReactElement;
+	}): React.ReactElement => children,
+}));
+
+jest.mock('@signozhq/ui/sonner', () => ({
+	...jest.requireActual('@signozhq/ui/sonner'),
 	toast: { success: jest.fn(), error: jest.fn() },
 }));
 
@@ -19,14 +30,14 @@ const keys: ServiceaccounttypesGettableFactorAPIKeyDTO[] = [
 		id: 'key-1',
 		name: 'Production Key',
 		expiresAt: 0,
-		lastObservedAt: null as any,
+		lastObservedAt: null as unknown as string,
 		serviceAccountId: 'sa-1',
 	},
 	{
 		id: 'key-2',
 		name: 'Staging Key',
-		expiresAt: 1924905600, // 2030-12-31
-		lastObservedAt: new Date('2026-03-10T10:00:00Z'),
+		expiresAt: 1924948800, // 2030-12-31 12:00 UTC (noon to avoid timezone issues)
+		lastObservedAt: '2026-03-10T10:00:00Z',
 		serviceAccountId: 'sa-1',
 	},
 ];
@@ -37,6 +48,7 @@ const defaultProps = {
 	isDisabled: false,
 	currentPage: 1,
 	pageSize: 10,
+	onPageChange: jest.fn(),
 };
 
 function renderKeysTab(
@@ -57,6 +69,7 @@ describe('KeysTab', () => {
 			rest.delete(SA_KEY_ENDPOINT, (_, res, ctx) =>
 				res(ctx.status(200), ctx.json({ status: 'success', data: {} })),
 			),
+			setupAuthzAdmin(),
 		);
 	});
 
@@ -64,9 +77,12 @@ describe('KeysTab', () => {
 		server.resetHandlers();
 	});
 
-	it('renders loading state', () => {
+	it('renders loading state', async () => {
 		renderKeysTab({ isLoading: true });
-		expect(document.querySelector('.ant-skeleton')).toBeInTheDocument();
+		// Wait for authz to complete, then check for skeleton
+		await waitFor(() => {
+			expect(document.querySelector('.ant-skeleton')).toBeInTheDocument();
+		});
 	});
 
 	it('renders empty state when no keys and clicking add sets add-key param', async () => {
@@ -81,9 +97,9 @@ describe('KeysTab', () => {
 			</NuqsTestingAdapter>,
 		);
 
-		expect(
-			screen.getByText(/No keys. Start by creating one./i),
-		).toBeInTheDocument();
+		await expect(
+			screen.findByText(/No keys. Start by creating one./i),
+		).resolves.toBeInTheDocument();
 		const addBtn = screen.getByRole('button', { name: /\+ Add your first key/i });
 		await user.click(addBtn);
 		expect(onUrlUpdate).toHaveBeenCalledWith(
@@ -93,10 +109,12 @@ describe('KeysTab', () => {
 		);
 	});
 
-	it('renders table with keys', () => {
+	it('renders table with keys', async () => {
 		renderKeysTab();
 
-		expect(screen.getByText('Production Key')).toBeInTheDocument();
+		await expect(
+			screen.findByText('Production Key'),
+		).resolves.toBeInTheDocument();
 		expect(screen.getByText('Staging Key')).toBeInTheDocument();
 		expect(screen.getByText('Never')).toBeInTheDocument();
 		expect(screen.getByText('Dec 31, 2030')).toBeInTheDocument();
@@ -112,7 +130,7 @@ describe('KeysTab', () => {
 			</NuqsTestingAdapter>,
 		);
 
-		const row = screen.getByText('Production Key').closest('tr');
+		const row = (await screen.findByText('Production Key')).closest('tr');
 		if (!row) {
 			throw new Error('Row not found');
 		}
@@ -136,6 +154,8 @@ describe('KeysTab', () => {
 			</NuqsTestingAdapter>,
 		);
 
+		// Wait for authz to complete and table to render
+		await screen.findByText('Production Key');
 		const revokeBtns = screen
 			.getAllByRole('button')
 			.filter((btn) => btn.className.includes('keys-tab__revoke-btn'));
@@ -153,7 +173,8 @@ describe('KeysTab', () => {
 
 		renderKeysTab();
 
-		// Seed the keys cache so RevokeKeyModal can read the key name
+		// Wait for authz to complete and table to render
+		await screen.findByText('Production Key');
 		const revokeBtns = screen
 			.getAllByRole('button')
 			.filter((btn) => btn.className.includes('keys-tab__revoke-btn'));
@@ -163,16 +184,15 @@ describe('KeysTab', () => {
 		await user.click(confirmBtn);
 
 		await waitFor(() => {
-			expect(mockToast.success).toHaveBeenCalledWith(
-				'Key revoked successfully',
-				expect.anything(),
-			);
+			expect(mockToast.success).toHaveBeenCalledWith('Key revoked successfully');
 		});
 	});
 
-	it('disables actions when isDisabled is true', () => {
+	it('disables actions when isDisabled is true', async () => {
 		renderKeysTab({ isDisabled: true });
 
+		// Wait for authz to complete and table to render
+		await screen.findByText('Production Key');
 		const revokeBtns = screen
 			.getAllByRole('button')
 			.filter((btn) => btn.className.includes('keys-tab__revoke-btn'));

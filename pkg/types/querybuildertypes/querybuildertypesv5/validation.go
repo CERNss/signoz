@@ -38,6 +38,30 @@ func getQueryIdentifier(envelope QueryEnvelope, index int) string {
 	return fmt.Sprintf("%s at position %d", typeLabel, index+1)
 }
 
+// wrapValidationError rewraps a validation failure as errorFormat % (contextIdentifier,
+// innerMsg), carrying the inner error's additionals and suggestions onto the new error so
+// the structured hints survive the rewrap.
+func wrapValidationError(cause error, contextIdentifier string, errorFormat string) error {
+	if cause == nil {
+		return nil
+	}
+
+	_, _, innerMsg, _, _, additionals := errors.Unwrapb(cause)
+	inner := errors.AsJSON(cause)
+
+	newErr := errors.NewInvalidInputf(errors.CodeInvalidInput, errorFormat, contextIdentifier, innerMsg)
+
+	if len(additionals) > 0 {
+		newErr = newErr.WithAdditionals(additionals...)
+	}
+
+	if len(inner.Suggestions) > 0 {
+		newErr = newErr.WithSuggestions(inner.Suggestions...)
+	}
+
+	return newErr
+}
+
 const (
 	// Maximum limit for query results.
 	MaxQueryLimit = 10000
@@ -47,12 +71,13 @@ const (
 type ValidationOption func(*validationConfig)
 
 type validationConfig struct {
-	skipLimitOffsetValidation bool
-	skipAggregationValidation bool
-	skipHavingValidation      bool
-	skipAggregationOrderBy    bool
-	skipSelectFieldValidation bool
-	skipGroupByValidation     bool
+	skipLimitOffsetValidation      bool
+	skipAggregationValidation      bool
+	skipHavingValidation           bool
+	skipAggregationOrderBy         bool
+	skipSelectFieldValidation      bool
+	skipGroupByValidation          bool
+	withTimestampGroupByValidation bool
 }
 
 func applyValidationOptions(opts []ValidationOption) validationConfig {
@@ -108,6 +133,13 @@ func WithSkipSelectFieldValidation() ValidationOption {
 func WithSkipGroupByValidation() ValidationOption {
 	return func(cfg *validationConfig) {
 		cfg.skipGroupByValidation = true
+	}
+}
+
+// WithTimestampGroupByValidation enables validation to disallow grouping by timestamp field.
+func WithTimestampGroupByValidation() ValidationOption {
+	return func(cfg *validationConfig) {
+		cfg.withTimestampGroupByValidation = true
 	}
 }
 
@@ -175,6 +207,11 @@ func (q *QueryBuilderQuery[T]) validateGroupBy(cfg validationConfig) error {
 		if item.Name == "" {
 			return errors.NewInvalidInputf(
 				errors.CodeInvalidInput, "invalid empty key name for group by at index %d", idx,
+			)
+		}
+		if cfg.withTimestampGroupByValidation && item.Name == "timestamp" {
+			return errors.NewInvalidInputf(
+				errors.CodeInvalidInput, "group by on timestamp is not allowed",
 			)
 		}
 	}
@@ -301,6 +338,19 @@ func (q *QueryBuilderQuery[T]) validateAggregations(cfg validationConfig) error 
 		}
 	}
 
+	return nil
+}
+
+func (m MetricAggregation) ValidateForType() error {
+	if m.SpaceAggregation.IsPercentile() && !m.Type.IsPercentileSpaceAggregationAllowed() {
+		return errors.Newf(
+			errors.TypeInvalidInput,
+			errors.CodeInvalidInput,
+			"invalid space aggregation `%s` for metric type `%s`, percentile space aggregations are only supported for `histogram`, `exponentialhistogram` metric types",
+			m.SpaceAggregation.StringValue(),
+			m.Type.StringValue(),
+		)
+	}
 	return nil
 }
 
@@ -458,6 +508,9 @@ func (q *QueryBuilderQuery[T]) validateOrderByForAggregation() error {
 			}
 			slices.Sort(validKeys)
 
+			// Aggregation order-by keys are a small, exhaustive set (group-by keys,
+			// aggregation aliases/expressions, indices, __result), so a "valid references"
+			// list — unlike free-form field suggestions — is genuinely useful here.
 			return errors.NewInvalidInputf(
 				errors.CodeInvalidInput,
 				"invalid order by key '%s' for %s",
@@ -465,7 +518,7 @@ func (q *QueryBuilderQuery[T]) validateOrderByForAggregation() error {
 				orderId,
 			).WithAdditional(
 				fmt.Sprintf("For aggregation queries, order by can only reference group by keys, aggregation aliases/expressions, or aggregation indices. Valid keys are: %s", strings.Join(validKeys, ", ")),
-			)
+			).WithSuggestions(errors.NewSuggestionsOnLevenshteinDistance(orderKey, errors.NounKeys, validKeys)...)
 		}
 	}
 
@@ -520,6 +573,75 @@ func (r *QueryRangeRequest) Validate(opts ...ValidationOption) error {
 	}
 
 	return nil
+}
+
+// ValidateRequestScope validates request-level invariants (not individual query
+// specs) and returns the request type's ValidationOptions. The dry-run path uses
+// this so per-query errors can be attributed individually via QueryEnvelope.Validate
+// instead of failing fast like Validate does.
+func (r *QueryRangeRequest) ValidateRequestScope() ([]ValidationOption, error) {
+	if r.RequestType != RequestTypeRawStream && r.Start >= r.End {
+		return nil, errors.NewInvalidInputf(errors.CodeInvalidInput, "start time must be before end time")
+	}
+
+	var opts []ValidationOption
+	switch r.RequestType {
+	case RequestTypeRaw, RequestTypeRawStream, RequestTypeTrace, RequestTypeTimeSeries, RequestTypeScalar:
+		opts = GetValidationOptions(r.RequestType)
+	default:
+		return nil, errors.NewInvalidInputf(errors.CodeInvalidInput, "invalid request type: %s", r.RequestType).
+			WithAdditional("Valid request types are: raw, timeseries, scalar")
+	}
+
+	if r.RequestType == RequestTypeRaw || r.RequestType == RequestTypeRawStream || r.RequestType == RequestTypeTrace {
+		for _, envelope := range r.CompositeQuery.Queries {
+			if envelope.GetSignal() == telemetrytypes.SignalMetrics {
+				return nil, errors.NewInvalidInputf(errors.CodeInvalidInput, "raw request type is not supported for metric queries")
+			}
+		}
+	}
+
+	if len(r.CompositeQuery.Queries) == 0 {
+		return nil, errors.NewInvalidInputf(errors.CodeInvalidInput, "at least one query is required")
+	}
+
+	// Builder query names must be unique across the composite query.
+	queryNames := make(map[string]bool)
+	for _, envelope := range r.CompositeQuery.Queries {
+		if envelope.Type == QueryTypeBuilder || envelope.Type == QueryTypeSubQuery {
+			name := envelope.GetQueryName()
+			if name != "" {
+				if queryNames[name] {
+					return nil, errors.NewInvalidInputf(errors.CodeInvalidInput, "duplicate query name '%s'", name)
+				}
+				queryNames[name] = true
+			}
+		}
+	}
+
+	if err := r.validateAllQueriesNotDisabled(); err != nil {
+		return nil, err
+	}
+
+	return opts, nil
+}
+
+// Validate parses the preview query-string parameters. Verbose defaults to true
+// and accepts true/1/false/0; any other value is rejected.
+func (p *QueryRangePreviewParams) Validate() (QueryRangePreviewOptions, error) {
+	switch strings.ToLower(strings.TrimSpace(p.Verbose)) {
+	case "", "true", "1":
+		return QueryRangePreviewOptions{Verbose: true}, nil
+	case "false", "0":
+		return QueryRangePreviewOptions{Verbose: false}, nil
+	}
+	return QueryRangePreviewOptions{}, errors.NewInvalidInputf(errors.CodeInvalidInput, "invalid verbose value %q (allowed: true, false)", p.Verbose)
+}
+
+// Validate validates a single query envelope's spec — the per-query counterpart
+// to ValidateRequestScope, letting the dry-run report errors independently.
+func (e QueryEnvelope) Validate(opts ...ValidationOption) error {
+	return validateQueryEnvelope(e, opts...)
 }
 
 // validateAllQueriesNotDisabled validates that at least one query in the composite query is enabled.
@@ -659,13 +781,15 @@ func validateQueryEnvelope(envelope QueryEnvelope, opts ...ValidationOption) err
 			envelope.Type,
 		).WithAdditional(
 			"Valid query types are: builder_query, builder_sub_query, builder_formula, builder_join, promql, clickhouse_sql, trace_operator",
-		)
+		).WithSuggestions(errors.NewValidReferences(errors.NounQueryTypes, QueryType{}.Enum()...))
 	}
 }
 
 func GetValidationOptions(requestType RequestType) []ValidationOption {
 	switch requestType {
-	case RequestTypeTimeSeries, RequestTypeScalar:
+	case RequestTypeTimeSeries:
+		return []ValidationOption{WithSkipSelectFieldValidation(), WithTimestampGroupByValidation()}
+	case RequestTypeScalar:
 		return []ValidationOption{WithSkipSelectFieldValidation()}
 	case RequestTypeRaw, RequestTypeRawStream, RequestTypeTrace:
 		return []ValidationOption{WithSkipAggregationValidation(), WithSkipHavingValidation(), WithSkipAggregationOrderBy(), WithSkipGroupByValidation()}

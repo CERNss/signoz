@@ -19,10 +19,6 @@ const (
 
 const MaxAllowedPointsInTimeSeries = 300
 
-const TraceTTL = "traces"
-const MetricsTTL = "metrics"
-const LogsTTL = "logs"
-
 const SpanSearchScopeRoot = "isroot"
 const SpanSearchScopeEntryPoint = "isentrypoint"
 const OrderBySpanCount = "span_count"
@@ -128,7 +124,7 @@ const (
 // alert related constants
 const (
 	// AlertHelpPage is used in case default alert repo url is not set
-	AlertHelpPage   = "https://signoz.io/docs/userguide/alerts-management/#generator-url"
+	AlertHelpPage   = "https://signoz.io/docs/alerts/"
 	AlertTimeFormat = "2006-01-02 15:04:05"
 )
 

@@ -12,6 +12,7 @@ import (
 	"github.com/SigNoz/signoz/pkg/querybuilder"
 	qbtypes "github.com/SigNoz/signoz/pkg/types/querybuildertypes/querybuildertypesv5"
 	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
+	"github.com/SigNoz/signoz/pkg/valuer"
 )
 
 type cteNode struct {
@@ -24,6 +25,7 @@ type cteNode struct {
 type traceOperatorCTEBuilder struct {
 	start          uint64
 	end            uint64
+	orgID          valuer.UUID
 	operator       *qbtypes.QueryBuilderTraceOperator
 	stmtBuilder    *traceOperatorStatementBuilder
 	queries        map[string]*qbtypes.QueryBuilderQuery[qbtypes.TraceAggregation]
@@ -70,12 +72,31 @@ func (b *traceOperatorCTEBuilder) build(ctx context.Context, requestType qbtypes
 
 	selectFromCTE := rootCTEName
 	if b.operator.ReturnSpansFrom != "" {
-		selectFromCTE = b.queryToCTEName[b.operator.ReturnSpansFrom]
-		if selectFromCTE == "" {
+		sourceQueryCTE := b.queryToCTEName[b.operator.ReturnSpansFrom]
+		if sourceQueryCTE == "" {
 			return nil, errors.NewInvalidInputf(errors.CodeInvalidInput,
 				"returnSpansFrom references query '%s' which has no corresponding CTE",
 				b.operator.ReturnSpansFrom)
 		}
+		filteredCTEName := fmt.Sprintf("__return_from_%s", b.operator.ReturnSpansFrom)
+
+		// rootCTEName holds one row per matching *span*, not per *trace*, so it can
+		// contain many rows for the same trace_id. DISTINCT de-duplicates that set
+		// before ClickHouse builds the hash table for the IN check, keeping memory
+		// usage proportional to the number of distinct traces rather than spans.
+		matchingTracedSB := sqlbuilder.NewSelectBuilder()
+		matchingTracedSB.Select("DISTINCT trace_id")
+		matchingTracedSB.From(rootCTEName)
+		matchedTracesSQL, matchedTracesArgs := matchingTracedSB.BuildWithFlavor(sqlbuilder.ClickHouse)
+
+		filteredSB := sqlbuilder.NewSelectBuilder()
+		filteredSB.Select("*")
+		filteredSB.From(sourceQueryCTE)
+		filteredSB.Where(fmt.Sprintf("trace_id IN (%s)", matchedTracesSQL))
+		filteredSQL, filteredArgs := filteredSB.BuildWithFlavor(sqlbuilder.ClickHouse, matchedTracesArgs...)
+
+		b.addCTE(filteredCTEName, filteredSQL, filteredArgs, []string{sourceQueryCTE, rootCTEName})
+		selectFromCTE = filteredCTEName
 	}
 
 	finalStmt, err := b.buildFinalQuery(ctx, selectFromCTE, requestType)
@@ -139,6 +160,7 @@ func (b *traceOperatorCTEBuilder) buildTimeConstantsCTE() string {
 func (b *traceOperatorCTEBuilder) buildResourceFilterCTE(ctx context.Context, query qbtypes.QueryBuilderQuery[qbtypes.TraceAggregation]) (*qbtypes.Statement, error) {
 	return b.stmtBuilder.resourceFilterStmtBuilder.Build(
 		ctx,
+		b.orgID,
 		b.start,
 		b.end,
 		qbtypes.RequestTypeRaw,
@@ -191,11 +213,18 @@ func (b *traceOperatorCTEBuilder) buildQueryCTE(ctx context.Context, queryName s
 
 	keySelectors := getKeySelectors(*query)
 	b.stmtBuilder.logger.DebugContext(ctx, "Key selectors for query", slog.String("query_name", queryName), slog.Any("key_selectors", keySelectors))
-	keys, _, err := b.stmtBuilder.metadataStore.GetKeysMulti(ctx, keySelectors)
+	keys, _, err := b.stmtBuilder.metadataStore.GetKeysMulti(ctx, b.orgID, keySelectors)
 	if err != nil {
 		return "", err
 	}
 	b.stmtBuilder.logger.DebugContext(ctx, "Retrieved keys for query", slog.String("query_name", queryName), slog.Int("keys_count", len(keys)))
+
+	// The CTE only selects spans matching the filter. Aggregations, group by
+	// and order by run later in buildFinalQuery, so RequestTypeRaw is fine here.
+	for _, action := range adjustTraceKeys(keys, query, qbtypes.RequestTypeRaw) {
+		// TODO: change to debug level once we are confident about the behavior
+		b.stmtBuilder.logger.InfoContext(ctx, "key adjustment action", slog.String("action", action))
+	}
 
 	// Build resource filter CTE for this specific query
 	resourceFilterCTEName := fmt.Sprintf("__resource_filter_%s", cteName)
@@ -235,6 +264,7 @@ func (b *traceOperatorCTEBuilder) buildQueryCTE(ctx context.Context, queryName s
 			query.Filter.Expression,
 			querybuilder.FilterExprVisitorOpts{
 				Context:            ctx,
+				OrgID:              b.orgID,
 				Logger:             b.stmtBuilder.logger,
 				FieldMapper:        b.stmtBuilder.fm,
 				ConditionBuilder:   b.stmtBuilder.cb,
@@ -248,7 +278,7 @@ func (b *traceOperatorCTEBuilder) buildQueryCTE(ctx context.Context, queryName s
 			b.stmtBuilder.logger.ErrorContext(ctx, "Failed to prepare where clause", errors.Attr(err), slog.String("filter", query.Filter.Expression))
 			return "", err
 		}
-		if filterWhereClause != nil {
+		if !filterWhereClause.IsEmpty() {
 			b.stmtBuilder.logger.DebugContext(ctx, "Adding where clause", slog.Any("where_clause", filterWhereClause.WhereClause))
 			sb.AddWhereClause(filterWhereClause.WhereClause)
 		} else {
@@ -398,24 +428,46 @@ func (b *traceOperatorCTEBuilder) buildNotCTE(leftCTE, rightCTE string) (string,
 }
 
 func (b *traceOperatorCTEBuilder) buildFinalQuery(ctx context.Context, selectFromCTE string, requestType qbtypes.RequestType) (*qbtypes.Statement, error) {
+	// Mirror statement_builder.go::Build: for raw queries, empty selectFields
+	// expands to the full intrinsic + calculated set, and the list query also
+	// pulls in the contextual columns so the consume layer can merge them
+	// into unified attributes/resource (and parse events/links).
+	isSelectFieldsEmpty := false
+	if requestType == qbtypes.RequestTypeRaw {
+		isSelectFieldsEmpty = len(b.operator.SelectFields) == 0
+		if isSelectFieldsEmpty {
+			b.operator.SelectFields = make([]telemetrytypes.TelemetryFieldKey, 0, len(IntrinsicSpanFields)+len(CalculatedSpanFields))
+			b.operator.SelectFields = append(b.operator.SelectFields, IntrinsicSpanFields...)
+			b.operator.SelectFields = append(b.operator.SelectFields, CalculatedSpanFields...)
+		}
+	}
+
+	keySelectors := b.getKeySelectors()
+	keys, _, err := b.stmtBuilder.metadataStore.GetKeysMulti(ctx, b.orgID, keySelectors)
+	if err != nil {
+		return nil, err
+	}
+	b.adjustOperatorKeys(ctx, keys, requestType)
+
 	switch requestType {
 	case qbtypes.RequestTypeRaw:
-		return b.buildListQuery(ctx, selectFromCTE)
+		return b.buildListQuery(ctx, selectFromCTE, keys, isSelectFieldsEmpty)
 	case qbtypes.RequestTypeTimeSeries:
-		return b.buildTimeSeriesQuery(ctx, selectFromCTE)
+		return b.buildTimeSeriesQuery(ctx, selectFromCTE, keys)
 	case qbtypes.RequestTypeTrace:
-		return b.buildTraceQuery(ctx, selectFromCTE)
+		return b.buildTraceQuery(ctx, selectFromCTE, keys)
 	case qbtypes.RequestTypeScalar:
-		return b.buildScalarQuery(ctx, selectFromCTE)
+		return b.buildScalarQuery(ctx, selectFromCTE, keys)
 	default:
 		return nil, errors.NewInvalidInputf(errors.CodeInvalidInput, "unsupported request type: %s", requestType)
 	}
 }
 
-func (b *traceOperatorCTEBuilder) buildListQuery(ctx context.Context, selectFromCTE string) (*qbtypes.Statement, error) {
+func (b *traceOperatorCTEBuilder) buildListQuery(ctx context.Context, selectFromCTE string, keys map[string][]*telemetrytypes.TelemetryFieldKey, isSelectFieldsEmpty bool) (*qbtypes.Statement, error) {
 	sb := sqlbuilder.NewSelectBuilder()
 
-	// Select core fields
+	// Select core fields. These are always present so the trace operator
+	// response shape is stable regardless of user-supplied selectFields.
 	sb.Select(
 		"timestamp",
 		"trace_id",
@@ -434,47 +486,37 @@ func (b *traceOperatorCTEBuilder) buildListQuery(ctx context.Context, selectFrom
 		"parent_span_id": true,
 	}
 
-	// Get keys for selectFields
-	keySelectors := b.getKeySelectors()
-	for _, field := range b.operator.SelectFields {
-		keySelectors = append(keySelectors, &telemetrytypes.FieldKeySelector{
-			Name:          field.Name,
-			Signal:        telemetrytypes.SignalTraces,
-			FieldContext:  field.FieldContext,
-			FieldDataType: field.FieldDataType,
-		})
-	}
-
-	keys, _, err := b.stmtBuilder.metadataStore.GetKeysMulti(ctx, keySelectors)
-	if err != nil {
-		return nil, err
-	}
-
-	// Add selectFields using ColumnExpressionFor since we now have all base table columns
-	for _, field := range b.operator.SelectFields {
+	// Add selectFields since we now have all base table columns
+	for i, field := range b.operator.SelectFields {
 		if selectedFields[field.Name] {
 			continue
 		}
-		colExpr, err := b.stmtBuilder.fm.ColumnExpressionFor(ctx, b.start, b.end, &field, keys)
+		expr, err := b.stmtBuilder.fm.ColumnExpressionFor(ctx, b.orgID, b.start, b.end, &field, telemetrytypes.FieldDataTypeUnspecified, keys)
 		if err != nil {
 			b.stmtBuilder.logger.WarnContext(ctx, "failed to map select field",
 				slog.String("field", field.Name), errors.Attr(err))
 			continue
 		}
-		sb.SelectMore(colExpr)
+		sb.SelectMore(fmt.Sprintf("%s AS `%s`", sqlbuilder.Escape(expr), selectColumnAlias(i, field.Name)))
 		selectedFields[field.Name] = true
+	}
+
+	if isSelectFieldsEmpty {
+		for _, col := range ContextualSpanColumns {
+			sb.SelectMore(col)
+		}
 	}
 
 	sb.From(selectFromCTE)
 
-	// Add order by support using ColumnExpressionFor
+	// Add order by support
 	orderApplied := false
 	for _, orderBy := range b.operator.Order {
-		colExpr, err := b.stmtBuilder.fm.ColumnExpressionFor(ctx, b.start, b.end, &orderBy.Key.TelemetryFieldKey, keys)
+		expr, err := b.stmtBuilder.fm.ColumnExpressionFor(ctx, b.orgID, b.start, b.end, &orderBy.Key.TelemetryFieldKey, telemetrytypes.FieldDataTypeUnspecified, keys)
 		if err != nil {
 			return nil, err
 		}
-		sb.OrderBy(fmt.Sprintf("%s %s", colExpr, orderBy.Direction.StringValue()))
+		sb.OrderBy(fmt.Sprintf("%s %s", sqlbuilder.Escape(expr), orderBy.Direction.StringValue()))
 		orderApplied = true
 	}
 
@@ -497,6 +539,44 @@ func (b *traceOperatorCTEBuilder) buildListQuery(ctx context.Context, selectFrom
 		Query: sql,
 		Args:  args,
 	}, nil
+}
+
+// adjustOperatorKeys runs the same key adjustments as adjustTraceKeys, but on
+// the operator's own fields. The operator has a different struct shape than
+// QueryBuilderQuery, so we copy the relevant fields into a temp query, run
+// the shared helpers, and copy the results back.
+func (b *traceOperatorCTEBuilder) adjustOperatorKeys(ctx context.Context, keys map[string][]*telemetrytypes.TelemetryFieldKey, requestType qbtypes.RequestType) {
+	mergeDeprecatedTraceKeys(keys)
+
+	tmp := qbtypes.QueryBuilderQuery[qbtypes.TraceAggregation]{
+		Aggregations: b.operator.Aggregations,
+		SelectFields: b.operator.SelectFields,
+		GroupBy:      b.operator.GroupBy,
+		Order:        b.operator.Order,
+	}
+
+	actions := querybuilder.AdjustKeysForAliasExpressions(&tmp, requestType)
+	actions = append(actions, querybuilder.AdjustDuplicateKeys(&tmp)...)
+
+	for idx := range tmp.SelectFields {
+		actions = append(actions, adjustTraceKey(&tmp.SelectFields[idx], keys)...)
+	}
+	for idx := range tmp.GroupBy {
+		actions = append(actions, adjustTraceKey(&tmp.GroupBy[idx].TelemetryFieldKey, keys)...)
+	}
+	for idx := range tmp.Order {
+		actions = append(actions, adjustTraceKey(&tmp.Order[idx].Key.TelemetryFieldKey, keys)...)
+	}
+
+	// Copy back the slices the helpers can rewrite.
+	b.operator.Aggregations = tmp.Aggregations
+	b.operator.SelectFields = tmp.SelectFields
+	b.operator.GroupBy = tmp.GroupBy
+	b.operator.Order = tmp.Order
+
+	for _, action := range actions {
+		b.stmtBuilder.logger.InfoContext(ctx, "key adjustment action", slog.String("action", action))
+	}
 }
 
 func (b *traceOperatorCTEBuilder) getKeySelectors() []*telemetrytypes.FieldKeySelector {
@@ -526,6 +606,15 @@ func (b *traceOperatorCTEBuilder) getKeySelectors() []*telemetrytypes.FieldKeySe
 		})
 	}
 
+	for _, sf := range b.operator.SelectFields {
+		keySelectors = append(keySelectors, &telemetrytypes.FieldKeySelector{
+			Name:          sf.Name,
+			Signal:        telemetrytypes.SignalTraces,
+			FieldContext:  sf.FieldContext,
+			FieldDataType: sf.FieldDataType,
+		})
+	}
+
 	for i := range keySelectors {
 		keySelectors[i].Signal = telemetrytypes.SignalTraces
 	}
@@ -533,7 +622,7 @@ func (b *traceOperatorCTEBuilder) getKeySelectors() []*telemetrytypes.FieldKeySe
 	return keySelectors
 }
 
-func (b *traceOperatorCTEBuilder) buildTimeSeriesQuery(ctx context.Context, selectFromCTE string) (*qbtypes.Statement, error) {
+func (b *traceOperatorCTEBuilder) buildTimeSeriesQuery(ctx context.Context, selectFromCTE string, keys map[string][]*telemetrytypes.TelemetryFieldKey) (*qbtypes.Statement, error) {
 	sb := sqlbuilder.NewSelectBuilder()
 
 	sb.Select(fmt.Sprintf(
@@ -541,26 +630,8 @@ func (b *traceOperatorCTEBuilder) buildTimeSeriesQuery(ctx context.Context, sele
 		int64(b.operator.StepInterval.Seconds()),
 	))
 
-	keySelectors := b.getKeySelectors()
-	keys, _, err := b.stmtBuilder.metadataStore.GetKeysMulti(ctx, keySelectors)
-	if err != nil {
-		return nil, err
-	}
-
-	var allGroupByArgs []any
-
 	for _, gb := range b.operator.GroupBy {
-		expr, args, err := querybuilder.CollisionHandledFinalExpr(
-			ctx,
-			b.start,
-			b.end,
-			&gb.TelemetryFieldKey,
-			b.stmtBuilder.fm,
-			b.stmtBuilder.cb,
-			keys,
-			telemetrytypes.FieldDataTypeString,
-			nil,
-		)
+		expr, err := b.stmtBuilder.fm.ColumnExpressionFor(ctx, b.orgID, b.start, b.end, &gb.TelemetryFieldKey, telemetrytypes.FieldDataTypeString, keys)
 		if err != nil {
 			return nil, errors.NewInvalidInputf(
 				errors.CodeInvalidInput,
@@ -569,15 +640,14 @@ func (b *traceOperatorCTEBuilder) buildTimeSeriesQuery(ctx context.Context, sele
 				err,
 			)
 		}
-		colExpr := fmt.Sprintf("toString(%s) AS `%s`", expr, gb.Name)
-		allGroupByArgs = append(allGroupByArgs, args...)
-		sb.SelectMore(colExpr)
+		sb.SelectMore(fmt.Sprintf("toString(%s) AS `%s`", sqlbuilder.Escape(expr), gb.Name))
 	}
 
 	var allAggChArgs []any
 	for i, agg := range b.operator.Aggregations {
 		rewritten, chArgs, err := b.stmtBuilder.aggExprRewriter.Rewrite(
 			ctx,
+			b.orgID,
 			b.start,
 			b.end,
 			agg.Expression,
@@ -621,11 +691,10 @@ func (b *traceOperatorCTEBuilder) buildTimeSeriesQuery(ctx context.Context, sele
 	}
 	sb.OrderBy("ts desc")
 
-	combinedArgs := append(allGroupByArgs, allAggChArgs...)
+	combinedArgs := allAggChArgs
 
 	// Add HAVING clause if specified
-	err = b.addHavingClause(sb)
-	if err != nil {
+	if err := b.addHavingClause(sb); err != nil {
 		return nil, err
 	}
 
@@ -652,31 +721,13 @@ func (b *traceOperatorCTEBuilder) buildTraceSummaryCTE(selectFromCTE string) {
 	b.addCTE("trace_summary", sql, args, []string{"all_spans", selectFromCTE})
 }
 
-func (b *traceOperatorCTEBuilder) buildTraceQuery(ctx context.Context, selectFromCTE string) (*qbtypes.Statement, error) {
+func (b *traceOperatorCTEBuilder) buildTraceQuery(ctx context.Context, selectFromCTE string, keys map[string][]*telemetrytypes.TelemetryFieldKey) (*qbtypes.Statement, error) {
 	b.buildTraceSummaryCTE(selectFromCTE)
 
 	sb := sqlbuilder.NewSelectBuilder()
 
-	keySelectors := b.getKeySelectors()
-	keys, _, err := b.stmtBuilder.metadataStore.GetKeysMulti(ctx, keySelectors)
-	if err != nil {
-		return nil, err
-	}
-
-	var allGroupByArgs []any
-
 	for _, gb := range b.operator.GroupBy {
-		expr, args, err := querybuilder.CollisionHandledFinalExpr(
-			ctx,
-			b.start,
-			b.end,
-			&gb.TelemetryFieldKey,
-			b.stmtBuilder.fm,
-			b.stmtBuilder.cb,
-			keys,
-			telemetrytypes.FieldDataTypeString,
-			nil,
-		)
+		expr, err := b.stmtBuilder.fm.ColumnExpressionFor(ctx, b.orgID, b.start, b.end, &gb.TelemetryFieldKey, telemetrytypes.FieldDataTypeString, keys)
 		if err != nil {
 			return nil, errors.NewInvalidInputf(
 				errors.CodeInvalidInput,
@@ -685,9 +736,7 @@ func (b *traceOperatorCTEBuilder) buildTraceQuery(ctx context.Context, selectFro
 				err,
 			)
 		}
-		colExpr := fmt.Sprintf("toString(%s) AS `%s`", expr, gb.Name)
-		allGroupByArgs = append(allGroupByArgs, args...)
-		sb.SelectMore(colExpr)
+		sb.SelectMore(fmt.Sprintf("toString(%s) AS `%s`", sqlbuilder.Escape(expr), gb.Name))
 	}
 
 	rateInterval := (b.end - b.start) / querybuilder.NsToSeconds
@@ -696,6 +745,7 @@ func (b *traceOperatorCTEBuilder) buildTraceQuery(ctx context.Context, selectFro
 	for i, agg := range b.operator.Aggregations {
 		rewritten, chArgs, err := b.stmtBuilder.aggExprRewriter.Rewrite(
 			ctx,
+			b.orgID,
 			b.start,
 			b.end,
 			agg.Expression,
@@ -743,8 +793,7 @@ func (b *traceOperatorCTEBuilder) buildTraceQuery(ctx context.Context, selectFro
 		sb.GroupBy(groupByKeys...)
 	}
 
-	err = b.addHavingClause(sb)
-	if err != nil {
+	if err := b.addHavingClause(sb); err != nil {
 		return nil, err
 	}
 
@@ -791,7 +840,7 @@ func (b *traceOperatorCTEBuilder) buildTraceQuery(ctx context.Context, selectFro
 		sb.Limit(b.operator.Limit)
 	}
 
-	combinedArgs := append(allGroupByArgs, allAggChArgs...)
+	combinedArgs := allAggChArgs
 
 	sql, args := sb.BuildWithFlavor(sqlbuilder.ClickHouse, combinedArgs...)
 	return &qbtypes.Statement{
@@ -800,29 +849,11 @@ func (b *traceOperatorCTEBuilder) buildTraceQuery(ctx context.Context, selectFro
 	}, nil
 }
 
-func (b *traceOperatorCTEBuilder) buildScalarQuery(ctx context.Context, selectFromCTE string) (*qbtypes.Statement, error) {
+func (b *traceOperatorCTEBuilder) buildScalarQuery(ctx context.Context, selectFromCTE string, keys map[string][]*telemetrytypes.TelemetryFieldKey) (*qbtypes.Statement, error) {
 	sb := sqlbuilder.NewSelectBuilder()
 
-	keySelectors := b.getKeySelectors()
-	keys, _, err := b.stmtBuilder.metadataStore.GetKeysMulti(ctx, keySelectors)
-	if err != nil {
-		return nil, err
-	}
-
-	var allGroupByArgs []any
-
 	for _, gb := range b.operator.GroupBy {
-		expr, args, err := querybuilder.CollisionHandledFinalExpr(
-			ctx,
-			b.start,
-			b.end,
-			&gb.TelemetryFieldKey,
-			b.stmtBuilder.fm,
-			b.stmtBuilder.cb,
-			keys,
-			telemetrytypes.FieldDataTypeString,
-			nil,
-		)
+		expr, err := b.stmtBuilder.fm.ColumnExpressionFor(ctx, b.orgID, b.start, b.end, &gb.TelemetryFieldKey, telemetrytypes.FieldDataTypeString, keys)
 		if err != nil {
 			return nil, errors.NewInvalidInputf(
 				errors.CodeInvalidInput,
@@ -831,15 +862,14 @@ func (b *traceOperatorCTEBuilder) buildScalarQuery(ctx context.Context, selectFr
 				err,
 			)
 		}
-		colExpr := fmt.Sprintf("toString(%s) AS `%s`", expr, gb.Name)
-		allGroupByArgs = append(allGroupByArgs, args...)
-		sb.SelectMore(colExpr)
+		sb.SelectMore(fmt.Sprintf("toString(%s) AS `%s`", sqlbuilder.Escape(expr), gb.Name))
 	}
 
 	var allAggChArgs []any
 	for i, agg := range b.operator.Aggregations {
 		rewritten, chArgs, err := b.stmtBuilder.aggExprRewriter.Rewrite(
 			ctx,
+			b.orgID,
 			b.start,
 			b.end,
 			agg.Expression,
@@ -886,11 +916,10 @@ func (b *traceOperatorCTEBuilder) buildScalarQuery(ctx context.Context, selectFr
 		sb.OrderBy("__result_0 DESC")
 	}
 
-	combinedArgs := append(allGroupByArgs, allAggChArgs...)
+	combinedArgs := allAggChArgs
 
 	// Add HAVING clause if specified
-	err = b.addHavingClause(sb)
-	if err != nil {
+	if err := b.addHavingClause(sb); err != nil {
 		return nil, err
 	}
 

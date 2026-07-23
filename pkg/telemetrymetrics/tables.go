@@ -30,6 +30,19 @@ const (
 	TimeseriesV41weekLocalTableName  = "time_series_v4_1week"
 	AttributesMetadataTableName      = "distributed_metadata"
 	AttributesMetadataLocalTableName = "metadata"
+
+	// The buffer holds raw points for ~24h; the reduced tables hold 60s
+	// aggregates of dropped-label series.
+	SamplesV4BufferTableName          = "distributed_samples_v4_buffer"
+	SamplesV4BufferLocalTableName     = "samples_v4_buffer"
+	TimeseriesV4BufferTableName       = "distributed_time_series_v4_buffer"
+	TimeseriesV4BufferLocalTableName  = "time_series_v4_buffer"
+	SamplesV4ReducedLastTableName     = "distributed_samples_v4_reduced_last_60s"
+	SamplesV4ReducedSumTableName      = "distributed_samples_v4_reduced_sum_60s"
+	TimeseriesV4ReducedTableName      = "distributed_time_series_v4_reduced"
+	TimeseriesV4ReducedLocalTableName = "time_series_v4_reduced"
+
+	ReductionRulesTableName = "distributed_metric_reduction_rules"
 )
 
 var (
@@ -49,8 +62,16 @@ var (
 // in that order.
 func WhichTSTableToUse(
 	start, end uint64,
+	useBuffer bool,
 	tableHints *metrictypes.MetricTableHints,
 ) (uint64, uint64, string, string) {
+	// the buffer holds the recent raw window for reduced metrics and has the same
+	// shape as time_series_v4; round the start to the hour like the v4 table.
+	if useBuffer {
+		start = start - (start % (oneHourInMilliseconds))
+		return start, end, TimeseriesV4BufferTableName, TimeseriesV4BufferLocalTableName
+	}
+
 	// if we have a hint for the table, we need to use it
 	// the hint will be used to override the default table selection logic
 	if tableHints != nil {
@@ -124,54 +145,80 @@ func CountExpressionForSamplesTable(tableName string) string {
 	return "sum(count)"
 }
 
-// start and end are in milliseconds
-// we have three tables for samples
-// 1. distributed_samples_v4
-// 2. distributed_samples_v4_agg_5m - for queries with time range above or equal to 1 day and less than 1 week
-// 3. distributed_samples_v4_agg_30m - for queries with time range above or equal to 1 week
-// if the `timeAggregation` is `count_distinct` we can't use the aggregated tables because they don't support it.
+// ValueColumnForSamplesTable returns the column name holding the sample value:
+// "last" for the 5m/30m aggregated tables, "value" otherwise.
+// note all the other columns in the aggregated samples tables are nothing but aggregations.
+// and so "last" is the value column for these tables.
+func ValueColumnForSamplesTable(tableName string) string {
+	if tableName == SamplesV4Agg5mTableName || tableName == SamplesV4Agg30mTableName {
+		return "last"
+	}
+	return "value"
+}
+
+// WhichSamplesTableToUse returns the distributed and local samples table names
+// (in that order) appropriate for the given window, metric type, and time aggregation.
+//
+// start and end are in milliseconds. We have three tables for samples:
+//  1. distributed_samples_v4
+//  2. distributed_samples_v4_agg_5m — for queries with time range >= 1 day and < 1 week
+//  3. distributed_samples_v4_agg_30m — for queries with time range >= 1 week
+//
+// If the `timeAggregation` is `count_distinct` we can't use the aggregated tables
+// because they don't support it.
 func WhichSamplesTableToUse(
 	start, end uint64,
 	metricType metrictypes.Type,
 	timeAggregation metrictypes.TimeAggregation,
+	useBuffer bool,
 	tableHints *metrictypes.MetricTableHints,
-) string {
+) (string, string) {
+	// the buffer holds the recent raw window for reduced metrics; same shape as samples_v4
+	if useBuffer {
+		return SamplesV4BufferTableName, SamplesV4BufferLocalTableName
+	}
+
 	// if we have a hint for the table, we need to use it
-	// the hint will be used to override the default table selection logic
-	if tableHints != nil {
-		if tableHints.SamplesTableName != "" {
-			return tableHints.SamplesTableName
+	// the hint will be used to override the default table selection logic.
+	// SamplesTableName is the distributed name; derive the local via switch.
+	if tableHints != nil && tableHints.SamplesTableName != "" {
+		switch tableHints.SamplesTableName {
+		case SamplesV4TableName, SamplesV4BufferTableName:
+			return SamplesV4TableName, SamplesV4LocalTableName
+		case SamplesV4Agg5mTableName:
+			return SamplesV4Agg5mTableName, SamplesV4Agg5mLocalTableName
+		case SamplesV4Agg30mTableName:
+			return SamplesV4Agg30mTableName, SamplesV4Agg30mLocalTableName
+		case ExpHistogramTableName:
+			return ExpHistogramTableName, ExpHistogramLocalTableName
 		}
+		return tableHints.SamplesTableName, tableHints.SamplesTableName
 	}
 
 	// we don't have any aggregated table for sketches (yet)
 	if metricType == metrictypes.ExpHistogramType {
-		return ExpHistogramLocalTableName
+		return ExpHistogramTableName, ExpHistogramLocalTableName
 	}
 
 	// if the time aggregation is count_distinct, we need to use the distributed_samples_v4 table
 	// because the aggregated tables don't support count_distinct
 	if timeAggregation == metrictypes.TimeAggregationCountDistinct {
-		return SamplesV4TableName
+		return SamplesV4TableName, SamplesV4LocalTableName
 	}
 
 	if end-start < oneDayInMilliseconds+offsetBucket {
-		return SamplesV4TableName
+		return SamplesV4TableName, SamplesV4LocalTableName
 	} else if end-start < oneWeekInMilliseconds+offsetBucket {
-		return SamplesV4Agg5mTableName
-	} else {
-		return SamplesV4Agg30mTableName
+		return SamplesV4Agg5mTableName, SamplesV4Agg5mLocalTableName
 	}
+	return SamplesV4Agg30mTableName, SamplesV4Agg30mLocalTableName
 }
 
 func AggregationColumnForSamplesTable(
-	start, end uint64,
-	metricType metrictypes.Type,
+	tableName string,
 	temporality metrictypes.Temporality,
 	timeAggregation metrictypes.TimeAggregation,
-	tableHints *metrictypes.MetricTableHints,
 ) (string, error) {
-	tableName := WhichSamplesTableToUse(start, end, metricType, timeAggregation, tableHints)
 	var aggregationColumn string
 	switch temporality {
 	case metrictypes.Delta:
@@ -179,7 +226,7 @@ func AggregationColumnForSamplesTable(
 		// although it doesn't make sense to use anyLast, avg, min, max, count on delta metrics,
 		// we are keeping it here to make sure that query will not be invalid
 		switch tableName {
-		case SamplesV4TableName:
+		case SamplesV4TableName, SamplesV4BufferTableName:
 			switch timeAggregation {
 			case metrictypes.TimeAggregationLatest:
 				aggregationColumn = "anyLast(value)"
@@ -221,7 +268,7 @@ func AggregationColumnForSamplesTable(
 		// for cumulative metrics, we only support `RATE`/`INCREASE`. The max value in window is
 		// used to calculate the sum which is then divided by the window size to get the rate
 		switch tableName {
-		case SamplesV4TableName:
+		case SamplesV4TableName, SamplesV4BufferTableName:
 			switch timeAggregation {
 			case metrictypes.TimeAggregationLatest:
 				aggregationColumn = "anyLast(value)"
@@ -261,7 +308,7 @@ func AggregationColumnForSamplesTable(
 		}
 	case metrictypes.Unspecified:
 		switch tableName {
-		case SamplesV4TableName:
+		case SamplesV4TableName, SamplesV4BufferTableName:
 			switch timeAggregation {
 			case metrictypes.TimeAggregationLatest:
 				aggregationColumn = "anyLast(value)"
@@ -301,8 +348,7 @@ func AggregationColumnForSamplesTable(
 		}
 	}
 	if aggregationColumn == "" {
-		return "", errors.Newf(
-			errors.TypeInvalidInput,
+		return "", errors.NewInvalidInputf(
 			errors.CodeInvalidInput,
 			"invalid time aggregation, should be one of the following: [`latest`, `sum`, `avg`, `min`, `max`, `count`, `rate`, `increase`]",
 		)
@@ -310,9 +356,67 @@ func AggregationColumnForSamplesTable(
 	return aggregationColumn, nil
 }
 
+// WhichReducedSamplesTableToUse returns the 60s reduced samples table for a metric
+// type: the last_60s table for gauge-like series, the sum_60s table for counters
+// and histograms.
+func WhichReducedSamplesTableToUse(metricType metrictypes.Type) string {
+	if metricType == metrictypes.SumType || metricType == metrictypes.HistogramType {
+		return SamplesV4ReducedSumTableName
+	}
+	return SamplesV4ReducedLastTableName
+}
+
+// ReducedValueColumn returns the reduced value column (and the avg-denominator
+// weight) for a space aggregation. The reduced columns are pre-aggregated across
+// the original series, so the space aggregation picks the underlying value; the
+// sum table only has `sum`, so min/max across series have no column (ok=false).
+func ReducedValueColumn(metricType metrictypes.Type, space metrictypes.SpaceAggregation) (value, weight string, ok bool) {
+	if metricType == metrictypes.SumType || metricType == metrictypes.HistogramType {
+		switch space {
+		case metrictypes.SpaceAggregationSum:
+			return "`sum`", "", true
+		case metrictypes.SpaceAggregationAvg:
+			return "`sum`", "`count_series`", true
+		}
+		return "", "", false
+	}
+	switch space {
+	case metrictypes.SpaceAggregationSum:
+		return "`sum_last`", "", true
+	case metrictypes.SpaceAggregationAvg:
+		return "`sum_last`", "`count_series`", true
+	case metrictypes.SpaceAggregationMin:
+		return "`min`", "", true
+	case metrictypes.SpaceAggregationMax:
+		return "`max`", "", true
+	}
+	return "", "", false
+}
+
+// ReducedTimeAggregationColumn applies the time aggregation to the reduced value
+// column over the step's 60s buckets.
+func ReducedTimeAggregationColumn(timeAggregation metrictypes.TimeAggregation, stepSec int64, value string) string {
+	switch timeAggregation {
+	case metrictypes.TimeAggregationLatest:
+		return fmt.Sprintf("argMax(%s, unix_milli)", value)
+	case metrictypes.TimeAggregationAvg:
+		return fmt.Sprintf("avg(%s)", value)
+	case metrictypes.TimeAggregationMin:
+		return fmt.Sprintf("min(%s)", value)
+	case metrictypes.TimeAggregationMax:
+		return fmt.Sprintf("max(%s)", value)
+	case metrictypes.TimeAggregationCount:
+		return fmt.Sprintf("count(%s)", value)
+	case metrictypes.TimeAggregationRate:
+		return fmt.Sprintf("sum(%s) / %d", value, stepSec)
+	default: // sum, increase
+		return fmt.Sprintf("sum(%s)", value)
+	}
+}
+
 func AggregationQueryForHistogramCountWithParams(param *metrictypes.ComparisonSpaceAggregationParam) (string, error) {
 	if param == nil {
-		return "", errors.New(errors.TypeInvalidInput, errors.CodeInvalidInput, "no aggregation param provided for histogram count")
+		return "", errors.NewInvalidInputf(errors.CodeInvalidInput, "no aggregation param provided for histogram count")
 	}
 	histogramCountThreshold := param.Threshold
 
@@ -322,7 +426,7 @@ func AggregationQueryForHistogramCountWithParams(param *metrictypes.ComparisonSp
 	case ">":
 		return fmt.Sprintf("argMax(value, toFloat64(le)) - (argMaxIf(value, toFloat64(le), toFloat64(le) <= %f) + (argMinIf(value, toFloat64(le), toFloat64(le) > %f) - argMaxIf(value, toFloat64(le), toFloat64(le) <= %f)) * (%f - maxIf(toFloat64(le), toFloat64(le) <= %f)) / (minIf(toFloat64(le), toFloat64(le) > %f) - maxIf(toFloat64(le), toFloat64(le) <= %f))) AS value", histogramCountThreshold, histogramCountThreshold, histogramCountThreshold, histogramCountThreshold, histogramCountThreshold, histogramCountThreshold, histogramCountThreshold), nil
 	default:
-		return "", errors.New(errors.TypeInvalidInput, errors.CodeInvalidInput, "invalid space aggregation operator, should be one of the following: [`<=`, `>`]")
+		return "", errors.NewInvalidInputf(errors.CodeInvalidInput, "invalid space aggregation operator, should be one of the following: [`<=`, `>`]")
 	}
 
 }

@@ -30,7 +30,7 @@ func NewRuleStore(store sqlstore.SQLStore, queryParser queryparser.QueryParser, 
 	}
 }
 
-func (r *rule) CreateRule(ctx context.Context, storedRule *ruletypes.Rule, cb func(context.Context, valuer.UUID) error) (valuer.UUID, error) {
+func (r *rule) CreateRule(ctx context.Context, storedRule *ruletypes.StorableRule, cb func(context.Context, valuer.UUID) error) (valuer.UUID, error) {
 	err := r.sqlstore.RunInTxCtx(ctx, nil, func(ctx context.Context) error {
 		_, err := r.sqlstore.
 			BunDBCtx(ctx).
@@ -51,12 +51,13 @@ func (r *rule) CreateRule(ctx context.Context, storedRule *ruletypes.Rule, cb fu
 	return storedRule.ID, nil
 }
 
-func (r *rule) EditRule(ctx context.Context, storedRule *ruletypes.Rule, cb func(context.Context) error) error {
+func (r *rule) EditRule(ctx context.Context, storedRule *ruletypes.StorableRule, cb func(context.Context) error) error {
 	return r.sqlstore.RunInTxCtx(ctx, nil, func(ctx context.Context) error {
 		_, err := r.sqlstore.
 			BunDBCtx(ctx).
 			NewUpdate().
 			Model(storedRule).
+			Where("org_id = ?", storedRule.OrgID).
 			Where("id = ?", storedRule.ID.StringValue()).
 			Exec(ctx)
 		if err != nil {
@@ -67,12 +68,13 @@ func (r *rule) EditRule(ctx context.Context, storedRule *ruletypes.Rule, cb func
 	})
 }
 
-func (r *rule) DeleteRule(ctx context.Context, id valuer.UUID, cb func(context.Context) error) error {
+func (r *rule) DeleteRule(ctx context.Context, orgID valuer.UUID, id valuer.UUID, cb func(context.Context) error) error {
 	if err := r.sqlstore.RunInTxCtx(ctx, nil, func(ctx context.Context) error {
 		_, err := r.sqlstore.
 			BunDBCtx(ctx).
 			NewDelete().
-			Model(new(ruletypes.Rule)).
+			Model(new(ruletypes.StorableRule)).
+			Where("org_id = ?", orgID.StringValue()).
 			Where("id = ?", id.StringValue()).
 			Exec(ctx)
 		if err != nil {
@@ -87,8 +89,8 @@ func (r *rule) DeleteRule(ctx context.Context, id valuer.UUID, cb func(context.C
 	return nil
 }
 
-func (r *rule) GetStoredRules(ctx context.Context, orgID string) ([]*ruletypes.Rule, error) {
-	rules := make([]*ruletypes.Rule, 0)
+func (r *rule) GetStoredRules(ctx context.Context, orgID string) ([]*ruletypes.StorableRule, error) {
+	rules := make([]*ruletypes.StorableRule, 0)
 	err := r.sqlstore.
 		BunDB().
 		NewSelect().
@@ -102,16 +104,17 @@ func (r *rule) GetStoredRules(ctx context.Context, orgID string) ([]*ruletypes.R
 	return rules, nil
 }
 
-func (r *rule) GetStoredRule(ctx context.Context, id valuer.UUID) (*ruletypes.Rule, error) {
-	rule := new(ruletypes.Rule)
+func (r *rule) GetStoredRule(ctx context.Context, orgID valuer.UUID, id valuer.UUID) (*ruletypes.StorableRule, error) {
+	rule := new(ruletypes.StorableRule)
 	err := r.sqlstore.
 		BunDB().
 		NewSelect().
 		Model(rule).
+		Where("org_id = ?", orgID.StringValue()).
 		Where("id = ?", id.StringValue()).
 		Scan(ctx)
 	if err != nil {
-		return nil, err
+		return nil, r.sqlstore.WrapNotFoundErrf(err, errors.CodeNotFound, "rule with ID: %s does not exist", id.StringValue())
 	}
 	return rule, nil
 }

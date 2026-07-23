@@ -276,6 +276,44 @@ func (handler *handler) ListServicesMetadata(rw http.ResponseWriter, r *http.Req
 	render.Success(rw, http.StatusOK, cloudintegrationtypes.NewGettableServicesMetadata(services))
 }
 
+func (handler *handler) ListAccountServicesMetadata(rw http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	claims, err := authtypes.ClaimsFromContext(ctx)
+	if err != nil {
+		render.Error(rw, err)
+		return
+	}
+
+	provider, err := cloudintegrationtypes.NewCloudProvider(mux.Vars(r)["cloud_provider"])
+	if err != nil {
+		render.Error(rw, err)
+		return
+	}
+
+	accountID, err := valuer.NewUUID(mux.Vars(r)["id"])
+	if err != nil {
+		render.Error(rw, err)
+		return
+	}
+
+	// check if integration account exists and is not removed.
+	_, err = handler.module.GetConnectedAccount(ctx, valuer.MustNewUUID(claims.OrgID), accountID, provider)
+	if err != nil {
+		render.Error(rw, err)
+		return
+	}
+
+	services, err := handler.module.ListServicesMetadata(ctx, valuer.MustNewUUID(claims.OrgID), provider, accountID)
+	if err != nil {
+		render.Error(rw, err)
+		return
+	}
+
+	render.Success(rw, http.StatusOK, cloudintegrationtypes.NewGettableServicesMetadata(services))
+}
+
 func (handler *handler) GetService(rw http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
@@ -314,6 +352,51 @@ func (handler *handler) GetService(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	svc, err := handler.module.GetService(ctx, valuer.MustNewUUID(claims.OrgID), serviceID, provider, queryParams.CloudIntegrationID)
+	if err != nil {
+		render.Error(rw, err)
+		return
+	}
+
+	render.Success(rw, http.StatusOK, svc)
+}
+
+func (handler *handler) GetAccountService(rw http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	claims, err := authtypes.ClaimsFromContext(ctx)
+	if err != nil {
+		render.Error(rw, err)
+		return
+	}
+
+	provider, err := cloudintegrationtypes.NewCloudProvider(mux.Vars(r)["cloud_provider"])
+	if err != nil {
+		render.Error(rw, err)
+		return
+	}
+
+	serviceID, err := cloudintegrationtypes.NewServiceID(provider, mux.Vars(r)["service_id"])
+	if err != nil {
+		render.Error(rw, err)
+		return
+	}
+
+	cloudIntegrationID, err := valuer.NewUUID(mux.Vars(r)["id"])
+	if err != nil {
+		render.Error(rw, err)
+		return
+	}
+
+	orgID := valuer.MustNewUUID(claims.OrgID)
+
+	_, err = handler.module.GetConnectedAccount(ctx, orgID, cloudIntegrationID, provider)
+	if err != nil {
+		render.Error(rw, err)
+		return
+	}
+
+	svc, err := handler.module.GetService(ctx, orgID, serviceID, provider, cloudIntegrationID)
 	if err != nil {
 		render.Error(rw, err)
 		return
@@ -373,8 +456,14 @@ func (handler *handler) UpdateService(rw http.ResponseWriter, r *http.Request) {
 
 	// update or create service
 	if svc.CloudIntegrationService == nil {
-		cloudIntegrationService := cloudintegrationtypes.NewCloudIntegrationService(serviceID, cloudIntegrationID, req.Config)
-		err = handler.module.CreateService(ctx, orgID, cloudIntegrationService, provider)
+		var cloudIntegrationService *cloudintegrationtypes.CloudIntegrationService
+		cloudIntegrationService, err = cloudintegrationtypes.NewCloudIntegrationService(serviceID, cloudIntegrationID, provider, req.Config)
+		if err != nil {
+			render.Error(rw, err)
+			return
+		}
+
+		err = handler.module.CreateService(ctx, orgID, claims.Email, valuer.MustNewUUID(claims.IdentityID()), cloudIntegrationService, provider)
 	} else {
 		err = svc.CloudIntegrationService.Update(provider, serviceID, req.Config)
 		if err != nil {
@@ -382,7 +471,7 @@ func (handler *handler) UpdateService(rw http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		err = handler.module.UpdateService(ctx, orgID, svc.CloudIntegrationService, provider)
+		err = handler.module.UpdateService(ctx, orgID, claims.Email, valuer.MustNewUUID(claims.IdentityID()), svc.CloudIntegrationService, provider)
 	}
 	if err != nil {
 		render.Error(rw, err)
@@ -392,6 +481,7 @@ func (handler *handler) UpdateService(rw http.ResponseWriter, r *http.Request) {
 	render.Success(rw, http.StatusNoContent, nil)
 }
 
+// TODO: Rename AgentCheckIn to just CheckIn.
 func (handler *handler) AgentCheckIn(rw http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()

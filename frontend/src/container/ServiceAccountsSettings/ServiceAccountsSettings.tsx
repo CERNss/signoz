@@ -1,16 +1,25 @@
 import { useCallback, useEffect, useMemo } from 'react';
-import { Button } from '@signozhq/button';
+import { useQueryClient } from 'react-query';
 import { Check, ChevronDown, Plus } from '@signozhq/icons';
-import { Input } from '@signozhq/input';
-import type { MenuProps } from 'antd';
-import { Dropdown } from 'antd';
+import { Button } from '@signozhq/ui/button';
+import { DropdownMenuSimple, type MenuItem } from '@signozhq/ui/dropdown-menu';
+import { Input } from '@signozhq/ui/input';
 import { useListServiceAccounts } from 'api/generated/services/serviceaccount';
+import { invalidateListServiceAccounts } from 'api/generated/services/serviceaccount';
+import AuthZButton from 'lib/authz/components/AuthZButton/AuthZButton';
+import { AuthZGuardContent } from 'lib/authz/components/AuthZGuard/AuthZGuardContent';
+import AuthZTooltip from 'lib/authz/components/AuthZTooltip/AuthZTooltip';
+import { useAuthZ } from 'lib/authz/hooks/useAuthZ/useAuthZ';
 import CreateServiceAccountModal from 'components/CreateServiceAccountModal/CreateServiceAccountModal';
 import ErrorInPlace from 'components/ErrorInPlace/ErrorInPlace';
 import ServiceAccountDrawer from 'components/ServiceAccountDrawer/ServiceAccountDrawer';
 import ServiceAccountsTable, {
 	PAGE_SIZE,
 } from 'components/ServiceAccountsTable/ServiceAccountsTable';
+import {
+	SACreatePermission,
+	SAListPermission,
+} from 'lib/authz/hooks/useAuthZ/permissions/service-account.permissions';
 import {
 	parseAsBoolean,
 	parseAsInteger,
@@ -31,6 +40,13 @@ import {
 import './ServiceAccountsSettings.styles.scss';
 
 function ServiceAccountsSettings(): JSX.Element {
+	const queryClient = useQueryClient();
+	const { permissions: authzPermissions, isLoading: isAuthZLoading } = useAuthZ([
+		SAListPermission,
+	]);
+	const canListServiceAccounts =
+		authzPermissions?.[SAListPermission]?.isGranted ?? false;
+	const [, setSelectedAccountId] = useQueryState(SA_QUERY_PARAMS.ACCOUNT);
 	const [currentPage, setPage] = useQueryState(
 		SA_QUERY_PARAMS.PAGE,
 		parseAsInteger.withDefault(1),
@@ -45,7 +61,6 @@ function ServiceAccountsSettings(): JSX.Element {
 			FilterMode.All,
 		),
 	);
-	const [, setSelectedAccountId] = useQueryState(SA_QUERY_PARAMS.ACCOUNT);
 	const [, setIsCreateModalOpen] = useQueryState(
 		SA_QUERY_PARAMS.CREATE_SA,
 		parseAsBoolean.withDefault(false),
@@ -56,8 +71,9 @@ function ServiceAccountsSettings(): JSX.Element {
 		isLoading,
 		isError,
 		error,
-		refetch: handleCreateSuccess,
-	} = useListServiceAccounts();
+	} = useListServiceAccounts({ query: { enabled: canListServiceAccounts } });
+
+	const controlsDisabled = isAuthZLoading || !canListServiceAccounts;
 
 	const allAccounts = useMemo(
 		(): ServiceAccountRow[] =>
@@ -112,15 +128,15 @@ function ServiceAccountsSettings(): JSX.Element {
 
 		const maxPage = Math.max(1, Math.ceil(filteredAccounts.length / PAGE_SIZE));
 		if (currentPage > maxPage) {
-			setPage(maxPage);
+			void setPage(maxPage);
 		} else if (currentPage < 1) {
-			setPage(1);
+			void setPage(1);
 		}
 	}, [filteredAccounts.length, currentPage, setPage]);
 
 	const totalCount = allAccounts.length;
 
-	const filterMenuItems: MenuProps['items'] = [
+	const filterMenuItems: MenuItem[] = [
 		{
 			key: FilterMode.All,
 			label: (
@@ -130,8 +146,8 @@ function ServiceAccountsSettings(): JSX.Element {
 				</div>
 			),
 			onClick: (): void => {
-				setFilterMode(FilterMode.All);
-				setPage(1);
+				void setFilterMode(FilterMode.All);
+				void setPage(1);
 			},
 		},
 		{
@@ -143,8 +159,8 @@ function ServiceAccountsSettings(): JSX.Element {
 				</div>
 			),
 			onClick: (): void => {
-				setFilterMode(FilterMode.Active);
-				setPage(1);
+				void setFilterMode(FilterMode.Active);
+				void setPage(1);
 			},
 		},
 		{
@@ -156,8 +172,8 @@ function ServiceAccountsSettings(): JSX.Element {
 				</div>
 			),
 			onClick: (): void => {
-				setFilterMode(FilterMode.Deleted);
-				setPage(1);
+				void setFilterMode(FilterMode.Deleted);
+				void setPage(1);
 			},
 		},
 	];
@@ -176,7 +192,7 @@ function ServiceAccountsSettings(): JSX.Element {
 
 	const handleRowClick = useCallback(
 		(row: ServiceAccountRow): void => {
-			setSelectedAccountId(row.id);
+			void setSelectedAccountId(row.id);
 		},
 		[setSelectedAccountId],
 	);
@@ -184,15 +200,15 @@ function ServiceAccountsSettings(): JSX.Element {
 	const handleDrawerSuccess = useCallback(
 		(options?: { closeDrawer?: boolean }): void => {
 			if (options?.closeDrawer) {
-				setSelectedAccountId(null);
+				void setSelectedAccountId(null);
 			}
-			handleCreateSuccess();
+			void invalidateListServiceAccounts(queryClient);
 		},
-		[handleCreateSuccess, setSelectedAccountId],
+		[queryClient, setSelectedAccountId],
 	);
 
 	return (
-		<>
+		<div className="sa-settings-page">
 			<div className="sa-settings">
 				<div className="sa-settings__header">
 					<h1 className="sa-settings__title">Service Accounts</h1>
@@ -208,42 +224,52 @@ function ServiceAccountsSettings(): JSX.Element {
 						</a>
 					</p>
 				</div>
+			</div>
 
+			<div className="sa-settings__list-section">
 				<div className="sa-settings__controls">
-					<Dropdown
-						menu={{ items: filterMenuItems }}
-						trigger={['click']}
-						overlayClassName="sa-settings-filter-dropdown"
-					>
-						<Button
-							variant="solid"
-							size="sm"
-							color="secondary"
-							className="sa-settings-filter-trigger"
-						>
-							<span>{filterLabel}</span>
-							<ChevronDown size={12} className="sa-settings-filter-trigger__chevron" />
-						</Button>
-					</Dropdown>
+					<AuthZTooltip checks={[SAListPermission]}>
+						<span>
+							<DropdownMenuSimple
+								menu={{ items: filterMenuItems }}
+								className="sa-settings-filter-dropdown"
+							>
+								<Button
+									variant="solid"
+									color="secondary"
+									className="sa-settings-filter-trigger"
+									disabled={controlsDisabled}
+								>
+									<span>{filterLabel}</span>
+									<ChevronDown
+										size={12}
+										className="sa-settings-filter-trigger__chevron"
+									/>
+								</Button>
+							</DropdownMenuSimple>
+						</span>
+					</AuthZTooltip>
 
 					<div className="sa-settings__search">
-						<Input
-							type="search"
-							name="service-accounts-search"
-							placeholder="Search by name or email..."
-							value={searchQuery}
-							onChange={(e): void => {
-								setSearchQuery(e.target.value);
-								setPage(1);
-							}}
-							className="sa-settings-search-input"
-							color="secondary"
-						/>
+						<AuthZTooltip checks={[SAListPermission]}>
+							<Input
+								type="search"
+								name="service-accounts-search"
+								placeholder="Search by name or email..."
+								value={searchQuery}
+								onChange={(e): void => {
+									void setSearchQuery(e.target.value);
+									void setPage(1);
+								}}
+								className="sa-settings-search-input"
+								disabled={controlsDisabled}
+							/>
+						</AuthZTooltip>
 					</div>
 
-					<Button
+					<AuthZButton
+						checks={[SACreatePermission]}
 						variant="solid"
-						size="sm"
 						color="primary"
 						onClick={async (): Promise<void> => {
 							await setIsCreateModalOpen(true);
@@ -251,29 +277,31 @@ function ServiceAccountsSettings(): JSX.Element {
 					>
 						<Plus size={12} />
 						New Service Account
-					</Button>
+					</AuthZButton>
 				</div>
-			</div>
 
-			{isError ? (
-				<ErrorInPlace
-					error={toAPIError(
-						error,
-						'An unexpected error occurred while fetching service accounts.',
+				<AuthZGuardContent checks={[SAListPermission]}>
+					{isError ? (
+						<ErrorInPlace
+							error={toAPIError(
+								error,
+								'An unexpected error occurred while fetching service accounts.',
+							)}
+						/>
+					) : (
+						<ServiceAccountsTable
+							data={filteredAccounts}
+							loading={isLoading}
+							onRowClick={handleRowClick}
+						/>
 					)}
-				/>
-			) : (
-				<ServiceAccountsTable
-					data={filteredAccounts}
-					loading={isLoading}
-					onRowClick={handleRowClick}
-				/>
-			)}
+				</AuthZGuardContent>
+			</div>
 
 			<CreateServiceAccountModal />
 
 			<ServiceAccountDrawer onSuccess={handleDrawerSuccess} />
-		</>
+		</div>
 	);
 }
 

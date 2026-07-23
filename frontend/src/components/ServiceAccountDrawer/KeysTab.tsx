@@ -1,9 +1,17 @@
-import { useCallback, useMemo } from 'react';
-import { Button } from '@signozhq/button';
+import React, { useCallback, useMemo } from 'react';
 import { KeyRound, X } from '@signozhq/icons';
-import { Skeleton, Table, Tooltip } from 'antd';
+import { Pagination, Skeleton, Table, Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table/interface';
 import type { ServiceaccounttypesGettableFactorAPIKeyDTO } from 'api/generated/services/sigNoz.schemas';
+import AuthZButton from 'lib/authz/components/AuthZButton/AuthZButton';
+import { withAuthZContent } from 'lib/authz/components/withAuthZ/withAuthZContent';
+import {
+	APIKeyCreatePermission,
+	APIKeyListPermission,
+	buildAPIKeyDeletePermission,
+	buildSAAttachPermission,
+	buildSADetachPermission,
+} from 'lib/authz/hooks/useAuthZ/permissions/service-account.permissions';
 import { DATE_TIME_FORMATS } from 'constants/dateTimeFormats';
 import dayjs from 'dayjs';
 import { parseAsBoolean, parseAsString, useQueryState } from 'nuqs';
@@ -17,12 +25,15 @@ interface KeysTabProps {
 	keys: ServiceaccounttypesGettableFactorAPIKeyDTO[];
 	isLoading: boolean;
 	isDisabled?: boolean;
+	accountId?: string;
 	currentPage: number;
 	pageSize: number;
+	onPageChange: (page: number) => void;
 }
 
 interface BuildColumnsParams {
 	isDisabled: boolean;
+	accountId: string;
 	onRevokeClick: (keyId: string) => void;
 	handleformatLastObservedAt: (
 		lastObservedAt: Date | null | undefined,
@@ -42,6 +53,7 @@ function formatExpiry(expiresAt: number): JSX.Element {
 
 function buildColumns({
 	isDisabled,
+	accountId,
 	onRevokeClick,
 	handleformatLastObservedAt,
 }: BuildColumnsParams): ColumnsType<ServiceaccounttypesGettableFactorAPIKeyDTO> {
@@ -92,23 +104,38 @@ function buildColumns({
 			key: 'action',
 			width: 48,
 			align: 'right' as const,
-			render: (_, record): JSX.Element => (
-				<Tooltip title={isDisabled ? 'Service account disabled' : 'Revoke Key'}>
-					<Button
-						variant="ghost"
-						size="xs"
-						color="destructive"
-						disabled={isDisabled}
-						onClick={(e): void => {
-							e.stopPropagation();
-							onRevokeClick(record.id);
-						}}
-						className="keys-tab__revoke-btn"
-					>
-						<X size={12} />
-					</Button>
-				</Tooltip>
-			),
+			onCell: (): {
+				onClick: (e: React.MouseEvent) => void;
+				style: React.CSSProperties;
+			} => ({
+				onClick: (e): void => e.stopPropagation(),
+				style: { cursor: 'default' },
+			}),
+			render: (_, record): JSX.Element => {
+				const tooltipTitle = isDisabled ? 'Service account disabled' : 'Revoke Key';
+				return (
+					<Tooltip title={tooltipTitle}>
+						<AuthZButton
+							checks={[
+								buildAPIKeyDeletePermission(record.id),
+								buildSADetachPermission(accountId),
+							]}
+							authZEnabled={!isDisabled && !!accountId}
+							variant="ghost"
+							size="sm"
+							color="destructive"
+							disabled={isDisabled}
+							onClick={(e): void => {
+								e.stopPropagation();
+								onRevokeClick(record.id);
+							}}
+							className="keys-tab__revoke-btn"
+						>
+							<X size={12} />
+						</AuthZButton>
+					</Tooltip>
+				);
+			},
 		},
 	];
 }
@@ -117,8 +144,10 @@ function KeysTab({
 	keys,
 	isLoading,
 	isDisabled = false,
+	accountId = '',
 	currentPage,
 	pageSize,
+	onPageChange,
 }: KeysTabProps): JSX.Element {
 	const [, setIsAddKeyOpen] = useQueryState(
 		'add-key',
@@ -143,14 +172,20 @@ function KeysTab({
 
 	const onRevokeClick = useCallback(
 		(keyId: string): void => {
-			setRevokeKeyId(keyId);
+			void setRevokeKeyId(keyId);
 		},
 		[setRevokeKeyId],
 	);
 
 	const columns = useMemo(
-		() => buildColumns({ isDisabled, onRevokeClick, handleformatLastObservedAt }),
-		[isDisabled, onRevokeClick, handleformatLastObservedAt],
+		() =>
+			buildColumns({
+				isDisabled,
+				accountId,
+				onRevokeClick,
+				handleformatLastObservedAt,
+			}),
+		[isDisabled, accountId, onRevokeClick, handleformatLastObservedAt],
 	);
 
 	if (isLoading) {
@@ -176,16 +211,18 @@ function KeysTab({
 						Learn more
 					</a>
 				</p>
-				<Button
-					type="button"
-					className="keys-tab__learn-more"
+				<AuthZButton
+					checks={[APIKeyCreatePermission, buildSAAttachPermission(accountId)]}
+					authZEnabled={!isDisabled && !!accountId}
+					variant="link"
+					color="primary"
 					onClick={async (): Promise<void> => {
 						await setIsAddKeyOpen(true);
 					}}
 					disabled={isDisabled}
 				>
 					+ Add your first key
-				</Button>
+				</AuthZButton>
 			</div>
 		);
 	}
@@ -237,6 +274,24 @@ function KeysTab({
 				})}
 			/>
 
+			<Pagination
+				current={currentPage}
+				pageSize={pageSize}
+				total={keys.length}
+				showTotal={(total: number, range: number[]): JSX.Element => (
+					<>
+						<span className="sa-drawer__pagination-range">
+							{range[0]} &#8212; {range[1]}
+						</span>
+						<span className="sa-drawer__pagination-total"> of {total}</span>
+					</>
+				)}
+				showSizeChanger={false}
+				hideOnSinglePage
+				onChange={onPageChange}
+				className="sa-drawer__keys-pagination"
+			/>
+
 			<EditKeyModal keyItem={editKey} />
 
 			<RevokeKeyModal />
@@ -244,4 +299,7 @@ function KeysTab({
 	);
 }
 
-export default KeysTab;
+export default withAuthZContent(KeysTab, {
+	checks: [APIKeyListPermission],
+	fallbackOnLoading: <Skeleton active paragraph={{ rows: 6 }} />,
+});

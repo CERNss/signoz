@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery } from 'react-query';
-import { toast } from '@signozhq/sonner';
+import { toast } from '@signozhq/ui/sonner';
 import type { NotificationInstance } from 'antd/es/notification/interface';
 import logEvent from 'api/common/logEvent';
 import { RenderErrorResponseDTO } from 'api/generated/services/sigNoz.schemas';
@@ -9,10 +9,8 @@ import listOrgPreferences from 'api/v1/org/preferences/list';
 import updateOrgPreferenceAPI from 'api/v1/org/preferences/name/update';
 import { AxiosError } from 'axios';
 import { SOMETHING_WENT_WRONG } from 'constants/api';
-import { FeatureKeys } from 'constants/features';
 import { ORG_PREFERENCES } from 'constants/orgPreferences';
 import ROUTES from 'constants/routes';
-import { InviteTeamMembersProps } from 'container/OrganizationSettings/utils';
 import { useNotifications } from 'hooks/useNotifications';
 import history from 'lib/history';
 import { useAppContext } from 'providers/App/App';
@@ -63,28 +61,18 @@ const ONBOARDING_COMPLETE_EVENT_NAME = 'Org Onboarding: Complete';
 
 function OnboardingQuestionaire(): JSX.Element {
 	const { notifications } = useNotifications();
-	const { org, updateOrgPreferences, featureFlags } = useAppContext();
-	const isOnboardingV3Enabled = featureFlags?.find(
-		(flag) => flag.name === FeatureKeys.ONBOARDING_V3,
-	)?.active;
+	const { org, updateOrgPreferences } = useAppContext();
 	const [currentStep, setCurrentStep] = useState<number>(1);
 	const [orgDetails, setOrgDetails] = useState<OrgDetails>(INITIAL_ORG_DETAILS);
 	const [signozDetails, setSignozDetails] = useState<SignozDetails>(
 		INITIAL_SIGNOZ_DETAILS,
 	);
 
-	const [
-		optimiseSignozDetails,
-		setOptimiseSignozDetails,
-	] = useState<OptimiseSignozDetails>(INITIAL_OPTIMISE_SIGNOZ_DETAILS);
-	const [teamMembers, setTeamMembers] = useState<
-		InviteTeamMembersProps[] | null
-	>(null);
+	const [optimiseSignozDetails, setOptimiseSignozDetails] =
+		useState<OptimiseSignozDetails>(INITIAL_OPTIMISE_SIGNOZ_DETAILS);
 
-	const [
-		updatingOrgOnboardingStatus,
-		setUpdatingOrgOnboardingStatus,
-	] = useState<boolean>(false);
+	const [updatingOrgOnboardingStatus, setUpdatingOrgOnboardingStatus] =
+		useState<boolean>(false);
 
 	useEffect(() => {
 		logEvent('Org Onboarding: Started', {
@@ -107,11 +95,7 @@ function OnboardingQuestionaire(): JSX.Element {
 
 			logEvent('Org Onboarding: Redirecting to Get Started', {});
 
-			if (isOnboardingV3Enabled) {
-				history.push(ROUTES.GET_STARTED_WITH_CLOUD);
-			} else {
-				history.push(ROUTES.GET_STARTED);
-			}
+			history.push(ROUTES.GET_STARTED_WITH_CLOUD);
 		},
 		onError: () => {
 			setUpdatingOrgOnboardingStatus(false);
@@ -123,9 +107,8 @@ function OnboardingQuestionaire(): JSX.Element {
 		optimiseSignozDetails.hostsPerDay === 0 &&
 		optimiseSignozDetails.services === 0;
 
-	const { mutate: updateProfile, isLoading: isUpdatingProfile } = usePutProfile<
-		AxiosError<RenderErrorResponseDTO>
-	>();
+	const { mutate: updateProfile, isLoading: isUpdatingProfile } =
+		usePutProfile<AxiosError<RenderErrorResponseDTO>>();
 
 	const { mutate: updateOrgPreference } = useMutation(updateOrgPreferenceAPI, {
 		onSuccess: () => {
@@ -163,7 +146,7 @@ function OnboardingQuestionaire(): JSX.Element {
 									(item) => item !== 'Others',
 								) || []),
 								signozDetails?.otherInterestInSignoz,
-						  ] as string[])
+							] as string[])
 						: (signozDetails?.interestInSignoz as string[]),
 					logs_scale_per_day_in_gb: optimiseSignozDetails?.logsPerDay as number,
 					number_of_hosts: optimiseSignozDetails?.hostsPerDay as number,
@@ -245,8 +228,6 @@ function OnboardingQuestionaire(): JSX.Element {
 				{currentStep === 4 && (
 					<InviteTeamMembers
 						isLoading={updatingOrgOnboardingStatus}
-						teamMembers={teamMembers}
-						setTeamMembers={setTeamMembers}
 						onNext={handleOnboardingComplete}
 					/>
 				)}

@@ -34,6 +34,7 @@ export const Logout = async (): Promise<void> => {
 	window.dispatchEvent(new CustomEvent('LOGOUT'));
 
 	if (providerLogoutURL) {
+		// oxlint-disable-next-line signoz/no-raw-absolute-path -- provider end-session URL is external
 		window.location.href = providerLogoutURL;
 		return;
 	}

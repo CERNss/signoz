@@ -1,14 +1,15 @@
 import { memo, useState } from 'react';
-import { Button, Divider, Tooltip } from 'antd';
+import { Button, Tooltip } from 'antd';
+import { Divider } from '@signozhq/ui/divider';
 import cx from 'classnames';
 import OverlayScrollbar from 'components/OverlayScrollbar/OverlayScrollbar';
 import useFunnelConfiguration from 'hooks/TracesFunnels/useFunnelConfiguration';
-import { PencilLine } from 'lucide-react';
+import { PencilLine } from '@signozhq/icons';
 import FunnelItemPopover from 'pages/TracesFunnels/components/FunnelsList/FunnelItemPopover';
 import { useFunnelContext } from 'pages/TracesFunnels/FunnelContext';
 import CopyToClipboard from 'periscope/components/CopyToClipboard';
 import { useAppContext } from 'providers/App/App';
-import { Span } from 'types/api/trace/getTraceV2';
+import { SpanV3 } from 'types/api/trace/getTraceV3';
 import { FunnelData } from 'types/api/traceFunnels';
 
 import AddFunnelDescriptionModal from './AddFunnelDescriptionModal';
@@ -22,7 +23,7 @@ import './FunnelConfiguration.styles.scss';
 interface FunnelConfigurationProps {
 	funnel: FunnelData;
 	isTraceDetailsPage?: boolean;
-	span?: Span;
+	span?: SpanV3;
 	triggerAutoSave?: boolean;
 	showNotifications?: boolean;
 }
@@ -36,19 +37,14 @@ function FunnelConfiguration({
 }: FunnelConfigurationProps): JSX.Element {
 	const { hasEditPermission } = useAppContext();
 	const { triggerSave } = useFunnelContext();
-	const {
-		isPopoverOpen,
-		setIsPopoverOpen,
-		steps,
-		isSaving,
-	} = useFunnelConfiguration({
-		funnel,
-		triggerAutoSave: triggerAutoSave || triggerSave,
-		showNotifications: showNotifications || triggerSave,
-	});
-	const [isDescriptionModalOpen, setIsDescriptionModalOpen] = useState<boolean>(
-		false,
-	);
+	const { isPopoverOpen, setIsPopoverOpen, steps, isSaving } =
+		useFunnelConfiguration({
+			funnel,
+			triggerAutoSave: triggerAutoSave || triggerSave,
+			showNotifications: showNotifications || triggerSave,
+		});
+	const [isDescriptionModalOpen, setIsDescriptionModalOpen] =
+		useState<boolean>(false);
 
 	const handleDescriptionModalClose = (): void => {
 		setIsDescriptionModalOpen(false);
@@ -67,8 +63,8 @@ function FunnelConfiguration({
 								!hasEditPermission
 									? 'You need editor or admin access to edit funnel description'
 									: funnel?.description
-									? 'Edit funnel description'
-									: 'Add funnel description'
+										? 'Edit funnel description'
+										: 'Add funnel description'
 							}
 						>
 							<Button
@@ -81,7 +77,7 @@ function FunnelConfiguration({
 							/>
 						</Tooltip>
 						<CopyToClipboard textToCopy={window.location.href} />
-						<Divider type="vertical" />
+						<Divider type="vertical" className="funnel-configuration__divider" />
 						<FunnelItemPopover
 							isPopoverOpen={isPopoverOpen}
 							setIsPopoverOpen={setIsPopoverOpen}
@@ -107,6 +103,7 @@ function FunnelConfiguration({
 						)}
 						<div className="funnel-configuration__steps">
 							{!isTraceDetailsPage && <StepsHeader />}
+
 							<StepsContent isTraceDetailsPage={isTraceDetailsPage} span={span} />
 						</div>
 					</>

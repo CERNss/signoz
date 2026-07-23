@@ -7,23 +7,29 @@ import {
 	useEffect,
 	useMemo,
 	useReducer,
+	useRef,
 	useState,
 } from 'react';
 import { useLocation } from 'react-router-dom';
+import {
+	useCreateRule,
+	useTestRule,
+	useUpdateRuleByID,
+} from 'api/generated/services/rules';
 import { QueryParams } from 'constants/query';
 import { AlertDetectionTypes } from 'container/FormAlertRules';
-import { useCreateAlertRule } from 'hooks/alerts/useCreateAlertRule';
-import { useTestAlertRule } from 'hooks/alerts/useTestAlertRule';
-import { useUpdateAlertRule } from 'hooks/alerts/useUpdateAlertRule';
 import { useQueryBuilder } from 'hooks/queryBuilder/useQueryBuilder';
 import { mapQueryDataFromApi } from 'lib/newQueryBuilder/queryBuilderMappers/mapQueryDataFromApi';
 import { AlertTypes } from 'types/api/alerts/alertTypes';
 
 import { INITIAL_CREATE_ALERT_STATE } from './constants';
 import {
+	EvaluationWindowPreset,
+	resolveUrlAlertPrefill,
+} from './resolveUrlAlertPrefill';
+import {
 	AdvancedOptionsAction,
 	AlertThresholdAction,
-	AlertThresholdMatchType,
 	CreateAlertAction,
 	CreateAlertSlice,
 	EvaluationWindowAction,
@@ -53,13 +59,8 @@ export const useCreateAlertState = (): ICreateAlertContextProps => {
 export function CreateAlertProvider(
 	props: ICreateAlertProviderProps,
 ): JSX.Element {
-	const {
-		children,
-		initialAlertState,
-		isEditMode,
-		ruleId,
-		initialAlertType,
-	} = props;
+	const { children, initialAlertState, isEditMode, ruleId, initialAlertType } =
+		props;
 
 	const { currentQuery, redirectWithQueryBuilderData } = useQueryBuilder();
 
@@ -125,7 +126,13 @@ export function CreateAlertProvider(
 
 	const location = useLocation();
 	const queryParams = new URLSearchParams(location.search);
-	const thresholdsFromURL = queryParams.get(QueryParams.thresholds);
+	const ruleNameFromURL = queryParams.get(QueryParams.ruleName);
+	const yAxisUnitFromURL = queryParams.get(QueryParams.yAxisUnit);
+	// Prefill declared in the URL; applied verbatim, agnostic of the producer.
+	const urlPrefill = useMemo(
+		() => resolveUrlAlertPrefill(new URLSearchParams(location.search)),
+		[location.search],
+	);
 
 	const [alertType, setAlertType] = useState<AlertTypes>(() => {
 		if (isEditMode) {
@@ -157,7 +164,18 @@ export function CreateAlertProvider(
 		[redirectWithQueryBuilderData],
 	);
 
+	const ruleNameAppliedRef = useRef(false);
+	const yAxisUnitAppliedRef = useRef(false);
+
 	useEffect(() => {
+		// URL-declared prefill is a create-flow concern. In edit mode the alert
+		// state is owned by SET_INITIAL_STATE; running the RESET below would wipe
+		// the loaded thresholds each time the query builder rewrites location.search
+		// (which yields a fresh urlPrefill object and re-triggers this effect).
+		if (isEditMode) {
+			return;
+		}
+
 		setCreateAlertState({
 			slice: CreateAlertSlice.THRESHOLD,
 			action: {
@@ -165,36 +183,67 @@ export function CreateAlertProvider(
 			},
 		});
 
-		if (thresholdsFromURL) {
-			try {
-				const thresholds = JSON.parse(thresholdsFromURL);
-				setCreateAlertState({
-					slice: CreateAlertSlice.THRESHOLD,
-					action: {
-						type: 'SET_THRESHOLDS',
-						payload: thresholds,
-					},
-				});
-			} catch (error) {
-				console.error('Error parsing thresholds from URL:', error);
-			}
+		if (urlPrefill.thresholds) {
+			setCreateAlertState({
+				slice: CreateAlertSlice.THRESHOLD,
+				action: {
+					type: 'SET_THRESHOLDS',
+					payload: urlPrefill.thresholds,
+				},
+			});
+		}
 
+		if (urlPrefill.matchType) {
+			setCreateAlertState({
+				slice: CreateAlertSlice.THRESHOLD,
+				action: {
+					type: 'SET_MATCH_TYPE',
+					payload: urlPrefill.matchType,
+				},
+			});
+		}
+
+		if (urlPrefill.operator) {
+			setCreateAlertState({
+				slice: CreateAlertSlice.THRESHOLD,
+				action: {
+					type: 'SET_OPERATOR',
+					payload: urlPrefill.operator,
+				},
+			});
+		}
+
+		if (urlPrefill.evaluationWindowPreset === EvaluationWindowPreset.METER) {
 			setCreateAlertState({
 				slice: CreateAlertSlice.EVALUATION_WINDOW,
 				action: {
 					type: 'SET_INITIAL_STATE_FOR_METER',
 				},
 			});
+		}
 
+		if (ruleNameFromURL && !ruleNameAppliedRef.current) {
+			ruleNameAppliedRef.current = true;
 			setCreateAlertState({
-				slice: CreateAlertSlice.THRESHOLD,
+				slice: CreateAlertSlice.BASIC,
 				action: {
-					type: 'SET_MATCH_TYPE',
-					payload: AlertThresholdMatchType.IN_TOTAL,
+					type: 'SET_ALERT_NAME',
+					payload: ruleNameFromURL,
 				},
 			});
 		}
-	}, [alertType, thresholdsFromURL]);
+
+		if (yAxisUnitFromURL && !yAxisUnitAppliedRef.current) {
+			yAxisUnitAppliedRef.current = true;
+			setCreateAlertState({
+				slice: CreateAlertSlice.BASIC,
+				action: {
+					type: 'SET_Y_AXIS_UNIT',
+					payload: yAxisUnitFromURL,
+				},
+			});
+		}
+	}, [alertType, urlPrefill, ruleNameFromURL, yAxisUnitFromURL, isEditMode]);
 
 	useEffect(() => {
 		if (isEditMode && initialAlertState) {
@@ -212,20 +261,13 @@ export function CreateAlertProvider(
 		handleAlertTypeChange(AlertTypes.METRICS_BASED_ALERT);
 	}, [handleAlertTypeChange]);
 
-	const {
-		mutate: createAlertRule,
-		isLoading: isCreatingAlertRule,
-	} = useCreateAlertRule();
+	const { mutate: createAlertRule, isLoading: isCreatingAlertRule } =
+		useCreateRule();
 
-	const {
-		mutate: testAlertRule,
-		isLoading: isTestingAlertRule,
-	} = useTestAlertRule();
+	const { mutate: testAlertRule, isLoading: isTestingAlertRule } = useTestRule();
 
-	const {
-		mutate: updateAlertRule,
-		isLoading: isUpdatingAlertRule,
-	} = useUpdateAlertRule(ruleId || '');
+	const { mutate: updateAlertRule, isLoading: isUpdatingAlertRule } =
+		useUpdateRuleByID();
 
 	const contextValue: ICreateAlertContextProps = useMemo(
 		() => ({
@@ -249,6 +291,7 @@ export function CreateAlertProvider(
 			updateAlertRule,
 			isUpdatingAlertRule,
 			isEditMode: isEditMode || false,
+			ruleId: ruleId || '',
 		}),
 		[
 			createAlertState,
@@ -267,6 +310,7 @@ export function CreateAlertProvider(
 			updateAlertRule,
 			isUpdatingAlertRule,
 			isEditMode,
+			ruleId,
 		],
 	);
 

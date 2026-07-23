@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
-	schemamigrator "github.com/SigNoz/signoz-otel-collector/cmd/signozschemamigrator/schema_migrator"
 	"github.com/SigNoz/signoz/pkg/types/metrictypes"
 	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
+	"github.com/SigNoz/signoz/pkg/valuer"
 )
 
 // MockMetadataStore implements the MetadataStore interface for testing purposes.
@@ -17,8 +17,9 @@ type MockMetadataStore struct {
 	AllValuesMap               map[string]*telemetrytypes.TelemetryFieldValues
 	TemporalityMap             map[string]metrictypes.Temporality
 	TypeMap                    map[string]metrictypes.Type
+	ReducedMap                 map[string]bool
 	PromotedPathsMap           map[string]bool
-	LogsJSONIndexesMap         map[string][]schemamigrator.Index
+	LogsJSONIndexes            []telemetrytypes.TelemetryFieldKeySkipIndex
 	ColumnEvolutionMetadataMap map[string][]*telemetrytypes.EvolutionEntry
 	LookupKeysMap              map[telemetrytypes.MetricMetadataLookupKey]int64
 	// StaticFields holds signal-specific intrinsic field definitions (e.g. telemetrylogs.IntrinsicFields).
@@ -34,7 +35,7 @@ func NewMockMetadataStore() *MockMetadataStore {
 		TemporalityMap:             make(map[string]metrictypes.Temporality),
 		TypeMap:                    make(map[string]metrictypes.Type),
 		PromotedPathsMap:           make(map[string]bool),
-		LogsJSONIndexesMap:         make(map[string][]schemamigrator.Index),
+		LogsJSONIndexes:            []telemetrytypes.TelemetryFieldKeySkipIndex{},
 		ColumnEvolutionMetadataMap: make(map[string][]*telemetrytypes.EvolutionEntry),
 		LookupKeysMap:              make(map[telemetrytypes.MetricMetadataLookupKey]int64),
 		StaticFields:               make(map[string]telemetrytypes.TelemetryFieldKey),
@@ -49,7 +50,7 @@ func (m *MockMetadataStore) SetStaticFields(intrinsicFields map[string]telemetry
 }
 
 // GetKeys returns a map of field keys types.TelemetryFieldKey by name.
-func (m *MockMetadataStore) GetKeys(ctx context.Context, fieldKeySelector *telemetrytypes.FieldKeySelector) (map[string][]*telemetrytypes.TelemetryFieldKey, bool, error) {
+func (m *MockMetadataStore) GetKeys(ctx context.Context, _ valuer.UUID, fieldKeySelector *telemetrytypes.FieldKeySelector) (map[string][]*telemetrytypes.TelemetryFieldKey, bool, error) {
 	setOfKeys := make(map[string]*telemetrytypes.TelemetryFieldKey)
 	result := make(map[string][]*telemetrytypes.TelemetryFieldKey)
 
@@ -90,13 +91,13 @@ func (m *MockMetadataStore) GetKeys(ctx context.Context, fieldKeySelector *telem
 }
 
 // GetKeysMulti applies multiple selectors and returns combined results.
-func (m *MockMetadataStore) GetKeysMulti(ctx context.Context, fieldKeySelectors []*telemetrytypes.FieldKeySelector) (map[string][]*telemetrytypes.TelemetryFieldKey, bool, error) {
+func (m *MockMetadataStore) GetKeysMulti(ctx context.Context, orgID valuer.UUID, fieldKeySelectors []*telemetrytypes.FieldKeySelector) (map[string][]*telemetrytypes.TelemetryFieldKey, bool, error) {
 	result := make(map[string][]*telemetrytypes.TelemetryFieldKey)
 
 	// Process each selector
 	for _, selector := range fieldKeySelectors {
 		selectorCopy := selector // Create a copy to avoid issues with pointer semantics
-		selectorResults, _, err := m.GetKeys(ctx, selectorCopy)
+		selectorResults, _, err := m.GetKeys(ctx, orgID, selectorCopy)
 		if err != nil {
 			return nil, false, err
 		}
@@ -130,7 +131,7 @@ func (m *MockMetadataStore) GetKeysMulti(ctx context.Context, fieldKeySelectors 
 }
 
 // GetKey returns a list of keys with the given name.
-func (m *MockMetadataStore) GetKey(ctx context.Context, fieldKeySelector *telemetrytypes.FieldKeySelector) ([]*telemetrytypes.TelemetryFieldKey, error) {
+func (m *MockMetadataStore) GetKey(ctx context.Context, _ valuer.UUID, fieldKeySelector *telemetrytypes.FieldKeySelector) ([]*telemetrytypes.TelemetryFieldKey, error) {
 	if fieldKeySelector == nil {
 		return nil, nil
 	}
@@ -163,7 +164,7 @@ func (m *MockMetadataStore) GetKey(ctx context.Context, fieldKeySelector *teleme
 }
 
 // GetRelatedValues returns a list of related values for the given key name and selection.
-func (m *MockMetadataStore) GetRelatedValues(ctx context.Context, fieldValueSelector *telemetrytypes.FieldValueSelector) ([]string, bool, error) {
+func (m *MockMetadataStore) GetRelatedValues(ctx context.Context, _ valuer.UUID, fieldValueSelector *telemetrytypes.FieldValueSelector) ([]string, bool, error) {
 	if fieldValueSelector == nil {
 		return nil, true, nil
 	}
@@ -180,7 +181,7 @@ func (m *MockMetadataStore) GetRelatedValues(ctx context.Context, fieldValueSele
 }
 
 // GetAllValues returns all values for a given field.
-func (m *MockMetadataStore) GetAllValues(ctx context.Context, fieldValueSelector *telemetrytypes.FieldValueSelector) (*telemetrytypes.TelemetryFieldValues, bool, error) {
+func (m *MockMetadataStore) GetAllValues(ctx context.Context, _ valuer.UUID, fieldValueSelector *telemetrytypes.FieldValueSelector) (*telemetrytypes.TelemetryFieldValues, bool, error) {
 	if fieldValueSelector == nil {
 		return &telemetrytypes.TelemetryFieldValues{}, true, nil
 	}
@@ -307,7 +308,7 @@ func (m *MockMetadataStore) SetAllValues(lookupKey string, values *telemetrytype
 }
 
 // FetchTemporality fetches the temporality for a metric.
-func (m *MockMetadataStore) FetchTemporality(ctx context.Context, queryTimeRangeStartTs, queryTimeRangeEndTs uint64, metricName string) (metrictypes.Temporality, error) {
+func (m *MockMetadataStore) FetchTemporality(ctx context.Context, orgID valuer.UUID, queryTimeRangeStartTs, queryTimeRangeEndTs uint64, metricName string) (metrictypes.Temporality, error) {
 	if temporality, exists := m.TemporalityMap[metricName]; exists {
 		return temporality, nil
 	}
@@ -315,7 +316,7 @@ func (m *MockMetadataStore) FetchTemporality(ctx context.Context, queryTimeRange
 }
 
 // FetchTemporalityMulti fetches the temporality for multiple metrics.
-func (m *MockMetadataStore) FetchTemporalityMulti(ctx context.Context, queryTimeRangeStartTs, queryTimeRangeEndTs uint64, metricNames ...string) (map[string]metrictypes.Temporality, error) {
+func (m *MockMetadataStore) FetchTemporalityMulti(ctx context.Context, orgID valuer.UUID, queryTimeRangeStartTs, queryTimeRangeEndTs uint64, metricNames ...string) (map[string]metrictypes.Temporality, error) {
 	result := make(map[string]metrictypes.Temporality)
 
 	for _, metricName := range metricNames {
@@ -330,9 +331,10 @@ func (m *MockMetadataStore) FetchTemporalityMulti(ctx context.Context, queryTime
 }
 
 // FetchTemporalityMulti fetches the temporality for multiple metrics.
-func (m *MockMetadataStore) FetchTemporalityAndTypeMulti(ctx context.Context, queryTimeRangeStartTs, queryTimeRangeEndTs uint64, metricNames ...string) (map[string]metrictypes.Temporality, map[string]metrictypes.Type, error) {
+func (m *MockMetadataStore) FetchTemporalityAndTypeMulti(ctx context.Context, orgID valuer.UUID, queryTimeRangeStartTs, queryTimeRangeEndTs uint64, metricNames ...string) (map[string]metrictypes.Temporality, map[string]metrictypes.Type, map[string]bool, error) {
 	temporalities := make(map[string]metrictypes.Temporality)
 	types := make(map[string]metrictypes.Type)
+	reduced := make(map[string]bool)
 
 	for _, metricName := range metricNames {
 		if temporality, exists := m.TemporalityMap[metricName]; exists {
@@ -345,9 +347,12 @@ func (m *MockMetadataStore) FetchTemporalityAndTypeMulti(ctx context.Context, qu
 		} else {
 			types[metricName] = metrictypes.UnspecifiedType
 		}
+		if m.ReducedMap[metricName] {
+			reduced[metricName] = true
+		}
 	}
 
-	return temporalities, types, nil
+	return temporalities, types, reduced, nil
 }
 
 // SetTemporality sets the temporality for a metric in the mock store.
@@ -369,8 +374,8 @@ func (m *MockMetadataStore) GetPromotedPaths(ctx context.Context, paths ...strin
 }
 
 // ListLogsJSONIndexes lists the JSON indexes for the logs table.
-func (m *MockMetadataStore) ListLogsJSONIndexes(ctx context.Context, filters ...string) (map[string][]schemamigrator.Index, error) {
-	return m.LogsJSONIndexesMap, nil
+func (m *MockMetadataStore) ListLogsJSONIndexes(ctx context.Context, filters ...string) ([]telemetrytypes.TelemetryFieldKeySkipIndex, error) {
+	return m.LogsJSONIndexes, nil
 }
 
 func (m *MockMetadataStore) updateColumnEvolutionMetadataForKeys(_ context.Context, keysToUpdate []*telemetrytypes.TelemetryFieldKey) map[string][]*telemetrytypes.EvolutionEntry {
@@ -414,6 +419,6 @@ func (m *MockMetadataStore) SetFirstSeenFromMetricMetadata(firstSeenMap map[tele
 	}
 }
 
-func (m *MockMetadataStore) FetchLastSeenInfoMulti(ctx context.Context, metricNames ...string) (map[string]int64, error) {
+func (m *MockMetadataStore) FetchLastSeenInfoMulti(ctx context.Context, orgID valuer.UUID, metricNames ...string) (map[string]int64, error) {
 	return make(map[string]int64), nil
 }

@@ -8,7 +8,8 @@ import {
 	useRef,
 	useState,
 } from 'react';
-import { Select, Spin, Tag, Tooltip } from 'antd';
+import { Select, Spin, Tooltip } from 'antd';
+import { Badge } from '@signozhq/ui/badge';
 import cx from 'classnames';
 import {
 	DATA_TYPE_VS_ATTRIBUTE_VALUES_KEY,
@@ -38,7 +39,7 @@ import {
 	isUndefined,
 	unset,
 } from 'lodash-es';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp } from '@signozhq/icons';
 import type { BaseSelectRef } from 'rc-select';
 import {
 	BaseAutocompleteData,
@@ -49,7 +50,7 @@ import {
 	TagFilter,
 } from 'types/api/queryBuilder/queryBuilderData';
 import { DataSource } from 'types/common/queryBuilder';
-import { popupContainer } from 'utils/selectPopupContainer';
+import { useSelectPopupContainer } from 'utils/selectPopupContainer';
 import { v4 as uuid } from 'uuid';
 
 import { selectStyle } from '../QueryBuilderSearch/config';
@@ -156,6 +157,8 @@ function QueryBuilderSearchV2(
 		selectProps,
 	} = props;
 
+	const getPopupContainer = useSelectPopupContainer();
+
 	const { registerShortcut, deregisterShortcut } = useKeyboardHotkeys();
 
 	const { handleRunQuery, currentQuery } = useQueryBuilder();
@@ -181,9 +184,10 @@ function QueryBuilderSearchV2(
 
 	const [showAllFilters, setShowAllFilters] = useState<boolean>(false);
 
-	const isLogsDataSource = useMemo(() => query.dataSource === DataSource.LOGS, [
-		query.dataSource,
-	]);
+	const isLogsDataSource = useMemo(
+		() => query.dataSource === DataSource.LOGS,
+		[query.dataSource],
+	);
 
 	const memoizedSearchParams = useMemo(
 		() => [
@@ -278,43 +282,39 @@ function QueryBuilderSearchV2(
 		},
 	);
 
-	const {
-		data: suggestionsData,
-		isFetching: isFetchingSuggestions,
-	} = useGetAttributeSuggestions(
-		{
-			searchText: searchValue?.split(' ')[0],
-			dataSource: query.dataSource,
-			filters: query.filters || { items: [], op: 'AND' },
-		},
-		{
-			queryKey: [suggestionsParams],
-			enabled: isQueryEnabled && isLogsDataSource,
-		},
-	);
+	const { data: suggestionsData, isFetching: isFetchingSuggestions } =
+		useGetAttributeSuggestions(
+			{
+				searchText: searchValue?.split(' ')[0],
+				dataSource: query.dataSource,
+				filters: query.filters || { items: [], op: 'AND' },
+			},
+			{
+				queryKey: [suggestionsParams],
+				enabled: isQueryEnabled && isLogsDataSource,
+			},
+		);
 
-	const {
-		data: attributeValues,
-		isFetching: isFetchingAttributeValues,
-	} = useGetAggregateValues(
-		{
-			aggregateOperator: query.aggregateOperator || '',
-			dataSource: query.dataSource,
-			aggregateAttribute: query.aggregateAttribute?.key || '',
-			attributeKey: currentFilterItem?.key?.key || '',
-			filterAttributeKeyDataType:
-				currentFilterItem?.key?.dataType ?? DataTypes.EMPTY,
-			tagType: currentFilterItem?.key?.type ?? '',
-			searchText: isArray(currentFilterItem?.value)
-				? String(currentFilterItem?.value?.[currentFilterItem.value.length - 1]) ||
-				  ''
-				: currentFilterItem?.value?.toString() || '',
-		},
-		{
-			enabled: currentState === DropdownState.ATTRIBUTE_VALUE,
-			queryKey: [valueParams],
-		},
-	);
+	const { data: attributeValues, isFetching: isFetchingAttributeValues } =
+		useGetAggregateValues(
+			{
+				aggregateOperator: query.aggregateOperator || '',
+				dataSource: query.dataSource,
+				aggregateAttribute: query.aggregateAttribute?.key || '',
+				attributeKey: currentFilterItem?.key?.key || '',
+				filterAttributeKeyDataType:
+					currentFilterItem?.key?.dataType ?? DataTypes.EMPTY,
+				tagType: currentFilterItem?.key?.type ?? '',
+				searchText: isArray(currentFilterItem?.value)
+					? String(currentFilterItem?.value?.[currentFilterItem.value.length - 1]) ||
+						''
+					: currentFilterItem?.value?.toString() || '',
+			},
+			{
+				enabled: currentState === DropdownState.ATTRIBUTE_VALUE,
+				queryKey: [valueParams],
+			},
+		);
 
 	const handleDropdownSelect = useCallback(
 		(value: string) => {
@@ -564,9 +564,10 @@ function QueryBuilderSearchV2(
 		// Case 1 -> when typing an attribute key (not selecting from dropdown)
 		if (tagKey && isUndefined(currentFilterItem?.key)) {
 			let currentRunningAttributeKey;
-			const isSuggestedKeyInAutocomplete = suggestionsData?.payload?.attributes?.some(
-				(value) => value.key === tagKey.split(' ')[0],
-			);
+			const isSuggestedKeyInAutocomplete =
+				suggestionsData?.payload?.attributes?.some(
+					(value) => value.key === tagKey.split(' ')[0],
+				);
 
 			if (isSuggestedKeyInAutocomplete) {
 				const allAttributesMatchingTheKey =
@@ -705,7 +706,7 @@ function QueryBuilderSearchV2(
 										type: '',
 									},
 								},
-						  ]
+							]
 						: []),
 					...(suggestionsData?.payload?.attributes?.map((key) => ({
 						label: key.key,
@@ -738,7 +739,7 @@ function QueryBuilderSearchV2(
 										type: '',
 									},
 								},
-						  ]
+							]
 						: []),
 					// Map existing attribute keys from payload
 					...(data?.payload?.attributeKeys?.map((key) => ({
@@ -857,7 +858,7 @@ function QueryBuilderSearchV2(
 				Array.isArray(tag.value) &&
 				tag.value[tag.value.length - 1] === ''
 					? tag.value?.slice(0, -1)
-					: tag.value ?? '';
+					: (tag.value ?? '');
 			filterTags.items.push({
 				id: tag.id || uuid().slice(0, 8),
 				key: tag.key,
@@ -956,16 +957,19 @@ function QueryBuilderSearchV2(
 
 		return (
 			<span className="qb-search-bar-tokenised-tags">
-				<Tag
-					closable={!searchValue && closable}
-					onClose={onCloseHandler}
+				<Badge
+					color="vanilla"
 					className={tagDetails?.key?.type || ''}
+					closable={!searchValue && closable}
+					onClose={(e): void => {
+						e.preventDefault();
+						onCloseHandler();
+					}}
 				>
 					<Tooltip title={chipValue}>
 						<TypographyText
-							ellipsis
+							className="qb-tag-text"
 							$isInNin={isInNin}
-							disabled={isDisabled}
 							$isEnabled={!!searchValue}
 							onClick={(): void => {
 								if (!isDisabled) {
@@ -976,7 +980,7 @@ function QueryBuilderSearchV2(
 							{chipValue}
 						</TypographyText>
 					</Tooltip>
-				</Tag>
+				</Badge>
 			</span>
 		);
 	};
@@ -987,7 +991,7 @@ function QueryBuilderSearchV2(
 				{...selectProps}
 				data-testid={'qb-search-select'}
 				ref={selectRef}
-				{...(hasPopupContainer ? { getPopupContainer: popupContainer } : {})}
+				{...(hasPopupContainer ? { getPopupContainer } : {})}
 				{...(maxTagCount ? { maxTagCount } : {})}
 				key={queryTags.join('.')}
 				virtual={false}

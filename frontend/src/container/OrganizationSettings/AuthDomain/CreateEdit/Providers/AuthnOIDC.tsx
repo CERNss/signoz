@@ -1,9 +1,9 @@
 import { useCallback, useState } from 'react';
-import { Callout } from '@signozhq/callout';
-import { Checkbox } from '@signozhq/checkbox';
 import { Style } from '@signozhq/design-tokens';
 import { CircleHelp } from '@signozhq/icons';
-import { Input } from '@signozhq/input';
+import { Callout } from '@signozhq/ui/callout';
+import { Checkbox } from '@signozhq/ui/checkbox';
+import { Input } from '@signozhq/ui/input';
 import { Form, Select, Tooltip } from 'antd';
 import CopyToClipboard from 'periscope/components/CopyToClipboard';
 
@@ -20,7 +20,12 @@ function ConfigureOIDCAuthnProvider({
 	isCreate: boolean;
 }): JSX.Element {
 	const form = Form.useFormInstance();
+	// Must mirror the backend OIDC URL construction (origin + fixed path, base-path
+	// unaware) in pkg/authn/callbackauthn/oidccallbackauthn so admins copy the exact
+	// values the provider will receive.
+	// oxlint-disable-next-line signoz/no-raw-absolute-path
 	const callbackURL = `${window.location.origin}/api/v1/complete/oidc`;
+	// oxlint-disable-next-line signoz/no-raw-absolute-path
 	const postLogoutRedirectURL = `${window.location.origin}/login`;
 
 	const [expandedSection, setExpandedSection] = useState<ExpandedSection>(null);
@@ -41,7 +46,7 @@ function ConfigureOIDCAuthnProvider({
 					Configure OpenID Connect Single Sign-On with your Identity Provider. Read
 					the{' '}
 					<a
-						href="https://signoz.io/docs/userguide/sso-authentication"
+						href="https://signoz.io/docs/manage/administrator-guide/sso/overview/"
 						target="_blank"
 						rel="noreferrer"
 					>
@@ -188,19 +193,20 @@ function ConfigureOIDCAuthnProvider({
 					<div className="authn-provider__checkbox-row">
 						<Form.Item
 							name={['oidcConfig', 'insecureSkipEmailVerified']}
-							valuePropName="checked"
+							valuePropName="value"
 							noStyle
 						>
 							<Checkbox
 								id="oidc-skip-email-verification"
-								labelName="Skip Email Verification"
-								onCheckedChange={(checked: boolean): void => {
+								onChange={(checked: boolean): void => {
 									form.setFieldValue(
 										['oidcConfig', 'insecureSkipEmailVerified'],
 										checked,
 									);
 								}}
-							/>
+							>
+								Skip Email Verification
+							</Checkbox>
 						</Form.Item>
 						<Tooltip title='Whether to skip email verification. Defaults to "false"'>
 							<CircleHelp size={14} color={Style.L3_FOREGROUND} cursor="help" />
@@ -210,17 +216,18 @@ function ConfigureOIDCAuthnProvider({
 					<div className="authn-provider__checkbox-row">
 						<Form.Item
 							name={['oidcConfig', 'allowJit']}
-							initialValue={true}
-							valuePropName="checked"
+							initialValue
+							valuePropName="value"
 							noStyle
 						>
 							<Checkbox
 								id="oidc-allow-jit"
-								labelName="Auto-create Users (JIT)"
-								onCheckedChange={(checked: boolean): void => {
+								onChange={(checked: boolean): void => {
 									form.setFieldValue(['oidcConfig', 'allowJit'], checked);
 								}}
-							/>
+							>
+								Auto-create Users (JIT)
+							</Checkbox>
 						</Form.Item>
 						<Tooltip title="When enabled, users are created automatically on first successful SSO login.">
 							<CircleHelp size={14} color={Style.L3_FOREGROUND} cursor="help" />
@@ -230,16 +237,17 @@ function ConfigureOIDCAuthnProvider({
 					<div className="authn-provider__checkbox-row">
 						<Form.Item
 							name={['oidcConfig', 'enforceEmailDomain']}
-							valuePropName="checked"
+							valuePropName="value"
 							noStyle
 						>
 							<Checkbox
 								id="oidc-enforce-email-domain"
-								labelName="Enforce Email Domain Match"
-								onCheckedChange={(checked: boolean): void => {
+								onChange={(checked: boolean): void => {
 									form.setFieldValue(['oidcConfig', 'enforceEmailDomain'], checked);
 								}}
-							/>
+							>
+								Enforce Email Domain Match
+							</Checkbox>
 						</Form.Item>
 						<Tooltip title="Require callback email domain to match this auth domain name.">
 							<CircleHelp size={14} color={Style.L3_FOREGROUND} cursor="help" />
@@ -249,29 +257,27 @@ function ConfigureOIDCAuthnProvider({
 					<div className="authn-provider__checkbox-row">
 						<Form.Item
 							name={['oidcConfig', 'getUserInfo']}
-							valuePropName="checked"
+							valuePropName="value"
 							noStyle
 						>
 							<Checkbox
 								id="oidc-get-user-info"
-								labelName="Get User Info"
-								onCheckedChange={(checked: boolean): void => {
+								onChange={(checked: boolean): void => {
 									form.setFieldValue(['oidcConfig', 'getUserInfo'], checked);
 								}}
-							/>
+							>
+								Get User Info
+							</Checkbox>
 						</Form.Item>
 						<Tooltip title="Use the userinfo endpoint to get additional claims. Useful when providers return thin ID tokens.">
 							<CircleHelp size={14} color={Style.L3_FOREGROUND} cursor="help" />
 						</Tooltip>
 					</div>
-
-					<Callout
-						type="warning"
-						size="small"
-						showIcon
-						description="OIDC won't be enabled unless you enter all the attributes above"
-						className="callout"
-					/>
+					<div className="authn-provider__callout-wrapper">
+						<Callout type="warning" size="small" showIcon className="callout">
+							OIDC won&apos;t be enabled unless you enter all the attributes above
+						</Callout>
+					</div>
 				</div>
 
 				{/* Right Column - Advanced Settings */}

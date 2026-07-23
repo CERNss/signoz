@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import * as Sentry from '@sentry/react';
-import { Typography } from 'antd';
+import { Typography } from '@signozhq/ui/typography';
 import { isEqual } from 'lodash-es';
-import { LineChart } from 'lucide-react';
+import { ChartLine } from '@signozhq/icons';
 import ErrorBoundaryFallback from 'pages/ErrorBoundaryFallback/ErrorBoundaryFallback';
 import uPlot, { AlignedData, Options } from 'uplot';
 
@@ -127,6 +127,15 @@ export default function UPlotChart({
 	}, [isDataEmpty, destroyPlot]);
 
 	/**
+	 * Destroy the plot on unmount. Without this, uPlot's window-level
+	 * `dppxchange` listener keeps the instance (and its whole detached DOM
+	 * subtree) alive after the component is gone.
+	 */
+	const destroyPlotRef = useRef(destroyPlot);
+	destroyPlotRef.current = destroyPlot;
+	useEffect(() => (): void => destroyPlotRef.current(), []);
+
+	/**
 	 * Handle initialization and prop changes
 	 */
 	useEffect(() => {
@@ -182,7 +191,7 @@ export default function UPlotChart({
 					height: `${height}px`,
 				}}
 			>
-				<LineChart size={48} strokeWidth={0.5} />
+				<ChartLine size={48} strokeWidth={0.5} />
 				<Typography>No Data</Typography>
 			</div>
 		);

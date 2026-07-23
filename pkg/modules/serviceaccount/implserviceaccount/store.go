@@ -123,12 +123,31 @@ func (store *store) GetByIDAndStatus(ctx context.Context, id valuer.UUID, status
 	return storable, nil
 }
 
+func (store *store) GetServiceAccountsByOrgIDAndRoleID(ctx context.Context, orgID valuer.UUID, roleID valuer.UUID) ([]*serviceaccounttypes.ServiceAccount, error) {
+	serviceAccounts := make([]*serviceaccounttypes.ServiceAccount, 0)
+
+	err := store.
+		sqlstore.
+		BunDBCtx(ctx).
+		NewSelect().
+		Model(&serviceAccounts).
+		Join(`JOIN service_account_role ON service_account_role.service_account_id = service_account.id`).
+		Where(`service_account.org_id = ?`, orgID).
+		Where("service_account_role.role_id = ?", roleID).
+		Scan(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return serviceAccounts, nil
+}
+
 func (store *store) CountByOrgID(ctx context.Context, orgID valuer.UUID) (int64, error) {
 	storable := new(serviceaccounttypes.ServiceAccount)
 
 	count, err := store.
 		sqlstore.
-		BunDB().
+		BunDBCtx(ctx).
 		NewSelect().
 		Model(storable).
 		Where("org_id = ?", orgID).
@@ -179,28 +198,33 @@ func (store *store) CreateServiceAccountRole(ctx context.Context, serviceAccount
 		BunDBCtx(ctx).
 		NewInsert().
 		Model(serviceAccountRole).
-		On("CONFLICT (service_account_id, role_id) DO NOTHING").
 		Exec(ctx)
 	if err != nil {
-		return err
+		return store.sqlstore.WrapAlreadyExistsErrf(err, serviceaccounttypes.ErrCodeServiceAccountRoleAlreadyExists, "role: %s is already assigned to service account: %s", serviceAccountRole.RoleID, serviceAccountRole.ServiceAccountID)
 	}
 
 	return nil
 }
 
-func (store *store) DeleteServiceAccountRoles(ctx context.Context, serviceAccountID valuer.UUID) error {
-	_, err := store.
+func (store *store) GetServiceAccountRoleByOrgIDAndID(ctx context.Context, orgID valuer.UUID, id valuer.UUID) (*serviceaccounttypes.ServiceAccountRole, error) {
+	serviceAccountRole := new(serviceaccounttypes.ServiceAccountRole)
+
+	err := store.
 		sqlstore.
 		BunDBCtx(ctx).
-		NewDelete().
-		Model(new(serviceaccounttypes.ServiceAccountRole)).
-		Where("service_account_id = ?", serviceAccountID).
-		Exec(ctx)
+		NewSelect().
+		Model(serviceAccountRole).
+		Join("JOIN service_account").
+		JoinOn("service_account.id = service_account_role.service_account_id").
+		Where("service_account.org_id = ?", orgID).
+		Where("service_account_role.id = ?", id).
+		Relation("Role").
+		Scan(ctx)
 	if err != nil {
-		return err
+		return nil, store.sqlstore.WrapNotFoundErrf(err, serviceaccounttypes.ErrCodeServiceAccountRoleNotFound, "service account role with id: %s doesn't exist in org: %s", id, orgID)
 	}
 
-	return nil
+	return serviceAccountRole, nil
 }
 
 func (store *store) DeleteServiceAccountRole(ctx context.Context, serviceAccountID valuer.UUID, roleID valuer.UUID) error {

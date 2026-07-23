@@ -2,10 +2,10 @@ import { QueryParams } from 'constants/query';
 import ROUTES from 'constants/routes';
 import { themeColors } from 'constants/theme';
 
-export const styles = { background: '#1f1f1f' };
+export const styles = { background: 'var(--bg-ink-300)' };
 
 export const subMenuStyles = {
-	background: '#1f1f1f',
+	background: 'var(--bg-ink-300)',
 	margin: '0rem',
 	width: '100%',
 	color: themeColors.gainsboro,
@@ -26,7 +26,6 @@ export const routeConfig: Record<string, QueryParams[]> = {
 	[ROUTES.EDIT_ALERTS]: [QueryParams.resourceAttributes],
 	[ROUTES.ERROR_DETAIL]: [QueryParams.resourceAttributes],
 	[ROUTES.HOME_PAGE]: [QueryParams.resourceAttributes],
-	[ROUTES.GET_STARTED]: [QueryParams.resourceAttributes],
 	[ROUTES.ONBOARDING]: [QueryParams.resourceAttributes],
 	[ROUTES.GET_STARTED_WITH_CLOUD]: [QueryParams.resourceAttributes],
 	[ROUTES.LIST_ALL_ALERT]: [QueryParams.resourceAttributes],
@@ -46,6 +45,7 @@ export const routeConfig: Record<string, QueryParams[]> = {
 	[ROUTES.TRACES_EXPLORER]: [QueryParams.resourceAttributes],
 	[ROUTES.TRACE]: [QueryParams.resourceAttributes],
 	[ROUTES.TRACE_DETAIL]: [QueryParams.resourceAttributes],
+	[ROUTES.TRACE_DETAIL_OLD]: [QueryParams.resourceAttributes],
 	[ROUTES.UN_AUTHORIZED]: [QueryParams.resourceAttributes],
 	[ROUTES.USAGE_EXPLORER]: [QueryParams.resourceAttributes],
 	[ROUTES.VERSION]: [QueryParams.resourceAttributes],

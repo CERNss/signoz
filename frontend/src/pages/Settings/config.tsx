@@ -1,33 +1,29 @@
 import { RouteTabProps } from 'components/RouteTab/types';
 import ROUTES from 'constants/routes';
-import AlertChannels from 'container/AllAlertChannels';
 import BillingContainer from 'container/BillingContainer/BillingContainer';
-import CreateAlertChannels from 'container/CreateAlertChannels';
-import { ChannelType } from 'container/CreateAlertChannels/config';
 import GeneralSettings from 'container/GeneralSettings';
 import GeneralSettingsCloud from 'container/GeneralSettingsCloud';
 import IngestionSettings from 'container/IngestionSettings/IngestionSettings';
 import MultiIngestionSettings from 'container/IngestionSettings/MultiIngestionSettings';
+import MCPServerSettings from 'container/MCPServerSettings/MCPServerSettings';
 import MySettings from 'container/MySettings';
 import OrganizationSettings from 'container/OrganizationSettings';
 import RolesSettings from 'container/RolesSettings';
-import RoleDetailsPage from 'container/RolesSettings/RoleDetails';
+import CreateEditRolePage from 'container/RolesSettings/CreateEditRolePage';
+import ViewRolePage from 'container/RolesSettings/ViewRolePage';
 import { TFunction } from 'i18next';
 import {
 	Backpack,
-	BellDot,
 	Bot,
 	Building,
 	Cpu,
 	CreditCard,
 	Keyboard,
-	Pencil,
-	Plus,
 	Shield,
+	Sparkles,
 	User,
 	Users,
-} from 'lucide-react';
-import ChannelsEdit from 'pages/ChannelsEdit';
+} from '@signozhq/icons';
 import MembersSettings from 'pages/MembersSettings';
 import ServiceAccountsSettings from 'pages/ServiceAccountsSettings';
 import Shortcuts from 'pages/Shortcuts';
@@ -42,19 +38,6 @@ export const organizationSettings = (t: TFunction): RouteTabProps['routes'] => [
 		),
 		route: ROUTES.ORG_SETTINGS,
 		key: ROUTES.ORG_SETTINGS,
-	},
-];
-
-export const alertChannels = (t: TFunction): RouteTabProps['routes'] => [
-	{
-		Component: AlertChannels,
-		name: (
-			<div className="periscope-tab">
-				<BellDot size={16} /> {t('routes:alert_channels').toString()}
-			</div>
-		),
-		route: ROUTES.ALL_CHANNELS,
-		key: ROUTES.ALL_CHANNELS,
 	},
 ];
 
@@ -153,7 +136,7 @@ export const rolesSettings = (t: TFunction): RouteTabProps['routes'] => [
 
 export const roleDetails = (t: TFunction): RouteTabProps['routes'] => [
 	{
-		Component: RoleDetailsPage,
+		Component: ViewRolePage,
 		name: (
 			<div className="periscope-tab">
 				<Shield size={16} /> {t('routes:role_details').toString()}
@@ -161,6 +144,32 @@ export const roleDetails = (t: TFunction): RouteTabProps['routes'] => [
 		),
 		route: ROUTES.ROLE_DETAILS,
 		key: ROUTES.ROLE_DETAILS,
+	},
+];
+
+export const roleEdit = (t: TFunction): RouteTabProps['routes'] => [
+	{
+		Component: CreateEditRolePage,
+		name: (
+			<div className="periscope-tab">
+				<Shield size={16} /> {t('routes:role_edit').toString()}
+			</div>
+		),
+		route: ROUTES.ROLE_EDIT,
+		key: ROUTES.ROLE_EDIT,
+	},
+];
+
+export const roleCreate = (t: TFunction): RouteTabProps['routes'] => [
+	{
+		Component: CreateEditRolePage,
+		name: (
+			<div className="periscope-tab">
+				<Shield size={16} /> {t('routes:role_create').toString()}
+			</div>
+		),
+		route: ROUTES.ROLE_CREATE,
+		key: ROUTES.ROLE_CREATE,
 	},
 ];
 
@@ -205,30 +214,15 @@ export const serviceAccountsSettings = (
 	},
 ];
 
-export const createAlertChannels = (t: TFunction): RouteTabProps['routes'] => [
+export const mcpServerSettings = (t: TFunction): RouteTabProps['routes'] => [
 	{
-		Component: (): JSX.Element => (
-			<CreateAlertChannels preType={ChannelType.Slack} />
-		),
+		Component: MCPServerSettings,
 		name: (
 			<div className="periscope-tab">
-				<Plus size={16} /> {t('routes:create_alert_channels').toString()}
+				<Sparkles size={16} /> {t('routes:mcp_server').toString()}
 			</div>
 		),
-		route: ROUTES.CHANNELS_NEW,
-		key: ROUTES.CHANNELS_NEW,
-	},
-];
-
-export const editAlertChannels = (t: TFunction): RouteTabProps['routes'] => [
-	{
-		Component: ChannelsEdit,
-		name: (
-			<div className="periscope-tab">
-				<Pencil size={16} /> {t('routes:edit_alert_channels').toString()}
-			</div>
-		),
-		route: ROUTES.CHANNELS_EDIT,
-		key: ROUTES.CHANNELS_EDIT,
+		route: ROUTES.MCP_SERVER,
+		key: ROUTES.MCP_SERVER,
 	},
 ];

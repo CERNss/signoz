@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { AutoComplete, Spin, Typography } from 'antd';
+import { AutoComplete, Spin } from 'antd';
+import { Typography } from '@signozhq/ui/typography';
 import { useListMetrics } from 'api/generated/services/metrics';
 import { MetricsexplorertypesListMetricDTO } from 'api/generated/services/sigNoz.schemas';
 import { ATTRIBUTE_TYPES, toAttributeType } from 'constants/queryBuilder';
@@ -13,7 +14,7 @@ import {
 import { IBuilderQuery } from 'types/api/queryBuilder/queryBuilderData';
 import { MetricAggregation } from 'types/api/v5/queryRange';
 import { ExtendedSelectOption } from 'types/common/select';
-import { popupContainer } from 'utils/selectPopupContainer';
+import { useSelectPopupContainer } from 'utils/selectPopupContainer';
 
 import { selectStyle } from '../QueryBuilderSearch/config';
 import OptionRenderer from '../QueryBuilderSearch/OptionRenderer';
@@ -84,6 +85,7 @@ export const MetricNameSelector = memo(function MetricNameSelector({
 	signalSource,
 	'data-testid': dataTestId,
 }: MetricNameSelectorProps): JSX.Element {
+	const getPopupContainer = useSelectPopupContainer();
 	const currentMetricName =
 		(query.aggregations?.[0] as MetricAggregation)?.metricName ||
 		query.aggregateAttribute?.key ||
@@ -127,7 +129,11 @@ export const MetricNameSelector = memo(function MetricNameSelector({
 
 	const debouncedValue = useDebounce(searchText, DEBOUNCE_DELAY);
 
-	const { isFetching, isError, data: listMetricsData } = useListMetrics(
+	const {
+		isFetching,
+		isError,
+		data: listMetricsData,
+	} = useListMetrics(
 		{
 			searchText: debouncedValue,
 			limit: 100,
@@ -141,9 +147,10 @@ export const MetricNameSelector = memo(function MetricNameSelector({
 		},
 	);
 
-	const metrics = useMemo(() => listMetricsData?.data?.metrics ?? [], [
-		listMetricsData,
-	]);
+	const metrics = useMemo(
+		() => listMetricsData?.data?.metrics ?? [],
+		[listMetricsData],
+	);
 
 	useEffect(() => {
 		metricsRef.current = metrics;
@@ -266,7 +273,7 @@ export const MetricNameSelector = memo(function MetricNameSelector({
 	return (
 		<AutoComplete
 			className="metric-name-selector"
-			getPopupContainer={popupContainer}
+			getPopupContainer={getPopupContainer}
 			style={selectStyle}
 			filterOption={false}
 			placeholder={placeholder}
@@ -276,7 +283,7 @@ export const MetricNameSelector = memo(function MetricNameSelector({
 				isFetching ? (
 					<Spin size="small" />
 				) : isError ? (
-					<Typography.Text type="danger" style={{ fontSize: 12 }}>
+					<Typography.Text color="danger" style={{ fontSize: 12 }}>
 						Failed to load metrics
 					</Typography.Text>
 				) : null

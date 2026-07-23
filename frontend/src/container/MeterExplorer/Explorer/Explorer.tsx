@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from 'react-query';
 import * as Sentry from '@sentry/react';
 import { Button, Tooltip } from 'antd';
 import logEvent from 'api/common/logEvent';
@@ -7,16 +8,17 @@ import { QueryBuilderV2 } from 'components/QueryBuilderV2/QueryBuilderV2';
 import QuickFilters from 'components/QuickFilters/QuickFilters';
 import { QuickFiltersSource, SignalType } from 'components/QuickFilters/types';
 import { initialQueryMeterWithType, PANEL_TYPES } from 'constants/queryBuilder';
+import { REACT_QUERY_KEY } from 'constants/reactQueryKeys';
 import ExplorerOptionWrapper from 'container/ExplorerOptions/ExplorerOptionWrapper';
 import RightToolbarActions from 'container/QueryBuilder/components/ToolbarActions/RightToolbarActions';
 import { QueryBuilderProps } from 'container/QueryBuilder/QueryBuilder.interfaces';
 import DateTimeSelector from 'container/TopNav/DateTimeSelectionV2';
+import { ExportDashboard } from 'hooks/dashboard/useExportDashboards';
 import { useQueryBuilder } from 'hooks/queryBuilder/useQueryBuilder';
 import { useShareBuilderUrl } from 'hooks/queryBuilder/useShareBuilderUrl';
 import { useSafeNavigate } from 'hooks/useSafeNavigate';
-import { Filter } from 'lucide-react';
+import { Filter } from '@signozhq/icons';
 import ErrorBoundaryFallback from 'pages/ErrorBoundaryFallback/ErrorBoundaryFallback';
-import { Dashboard } from 'types/api/dashboard/getAll';
 import { Query } from 'types/api/queryBuilder/queryBuilderData';
 import { DataSource } from 'types/common/queryBuilder';
 import { generateExportToDashboardLink } from 'utils/dashboard/generateExportToDashboardLink';
@@ -33,10 +35,23 @@ function Explorer(): JSX.Element {
 		handleRunQuery,
 		stagedQuery,
 		updateAllQueriesOperators,
-		handleSetQueryData,
 		currentQuery,
 	} = useQueryBuilder();
 	const { safeNavigate } = useSafeNavigate();
+	const queryClient = useQueryClient();
+	const [isLoadingQueries, setIsLoadingQueries] = useState(false);
+	const [isCancelled, setIsCancelled] = useState(false);
+
+	useEffect(() => {
+		if (isLoadingQueries) {
+			setIsCancelled(false);
+		}
+	}, [isLoadingQueries]);
+
+	const handleCancelQuery = useCallback(() => {
+		queryClient.cancelQueries([REACT_QUERY_KEY.GET_QUERY_RANGE]);
+		setIsCancelled(true);
+	}, [queryClient]);
 
 	const [showQuickFilters, setShowQuickFilters] = useState(true);
 
@@ -50,15 +65,6 @@ function Explorer(): JSX.Element {
 			),
 		[updateAllQueriesOperators],
 	);
-
-	useEffect(() => {
-		handleSetQueryData(0, {
-			...initialQueryMeterWithType.builder.queryData[0],
-			source: 'meter',
-		});
-
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, []);
 
 	const exportDefaultQuery = useMemo(
 		() =>
@@ -75,7 +81,7 @@ function Explorer(): JSX.Element {
 
 	const handleExport = useCallback(
 		(
-			dashboard: Dashboard | null,
+			dashboard: ExportDashboard | null,
 			_isNewDashboard?: boolean,
 			queryToExport?: Query,
 		): void => {
@@ -155,7 +161,11 @@ function Explorer(): JSX.Element {
 
 							<div className="explore-header-right-actions">
 								<DateTimeSelector showAutoRefresh />
-								<RightToolbarActions onStageRunQuery={(): void => handleRunQuery()} />
+								<RightToolbarActions
+									onStageRunQuery={(): void => handleRunQuery()}
+									isLoadingQueries={isLoadingQueries}
+									handleCancelQuery={handleCancelQuery}
+								/>
 							</div>
 						</div>
 						<QueryBuilderV2
@@ -171,7 +181,10 @@ function Explorer(): JSX.Element {
 						/>
 
 						<div className="explore-content">
-							<TimeSeries />
+							<TimeSeries
+								onFetchingStateChange={setIsLoadingQueries}
+								isCancelled={isCancelled}
+							/>
 						</div>
 					</div>
 					<ExplorerOptionWrapper

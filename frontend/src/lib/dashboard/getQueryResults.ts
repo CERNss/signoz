@@ -22,7 +22,11 @@ import { SuccessResponseV2, Warning } from 'types/api';
 import { IDashboardVariable } from 'types/api/dashboard/getAll';
 import { MetricQueryRangeSuccessResponse } from 'types/api/metrics/getQueryRange';
 import { IBuilderQuery, Query } from 'types/api/queryBuilder/queryBuilderData';
-import { ExecStats, MetricRangePayloadV5 } from 'types/api/v5/queryRange';
+import {
+	ExecStats,
+	MetricRangePayloadV5,
+	QueryRangeResponseV5,
+} from 'types/api/v5/queryRange';
 import { QueryData } from 'types/api/widgets/getQuery';
 import { EQueryType } from 'types/common/dashboard';
 import { DataSource } from 'types/common/queryBuilder';
@@ -159,7 +163,7 @@ export const getLegend = (
 					aggregationExpression,
 					labelName,
 					singleAggregation,
-			  )
+				)
 			: getLegendForMultipleAggregations(
 					queryData,
 					allQueries,
@@ -167,7 +171,7 @@ export const getLegend = (
 					aggregationExpression,
 					labelName,
 					singleAggregation,
-			  );
+				);
 	}
 	return labelName || metaData?.queryName || queryData.queryName;
 };
@@ -192,6 +196,8 @@ export async function GetMetricQueryRange(
 		| SuccessResponseV2<MetricRangePayloadV5>;
 	let warning: Warning | undefined;
 	let meta: ExecStats | undefined;
+	// Raw V5 response, kept before it's converted to legacy — powers client-side export.
+	let rawV5Response: QueryRangeResponseV5 | undefined;
 
 	const panelType = props.originalGraphType || props.graphType;
 
@@ -268,6 +274,8 @@ export async function GetMetricQueryRange(
 				endTime: props.end * 1000,
 			});
 
+			rawV5Response = publicResponse.data.data;
+
 			// Convert V5 response to legacy format for components
 			response = convertV5ResponseToLegacy(
 				{
@@ -287,6 +295,8 @@ export async function GetMetricQueryRange(
 				signal,
 				headers,
 			);
+
+			rawV5Response = v5Response.data.data;
 
 			// Convert V5 response to legacy format for components
 			response = convertV5ResponseToLegacy(
@@ -352,21 +362,22 @@ export async function GetMetricQueryRange(
 	}
 
 	if (response.payload?.data?.newResult?.data?.resultType === 'anomaly') {
-		response.payload.data.newResult.data.result = response.payload.data.newResult.data.result.map(
-			(queryData) => {
+		response.payload.data.newResult.data.result =
+			response.payload.data.newResult.data.result.map((queryData) => {
 				if (legendMap[queryData.queryName]) {
 					queryData.legend = legendMap[queryData.queryName];
 				}
 
 				return queryData;
-			},
-		);
+			});
 	}
 
 	return {
 		...response,
 		warning,
 		meta,
+		rawV5Response,
+		legendMap,
 	};
 }
 

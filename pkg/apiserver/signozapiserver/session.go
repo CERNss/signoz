@@ -9,7 +9,7 @@ import (
 )
 
 func (provider *provider) addSessionRoutes(router *mux.Router) error {
-	if err := router.Handle("/api/v2/sessions/email_password", handler.New(provider.authZ.OpenAccess(provider.sessionHandler.CreateSessionByEmailPassword), handler.OpenAPIDef{
+	if err := router.Handle("/api/v2/sessions/email_password", handler.New(provider.authzMiddleware.OpenAccess(provider.sessionHandler.CreateSessionByEmailPassword), handler.OpenAPIDef{
 		ID:                  "CreateSessionByEmailPassword",
 		Tags:                []string{"sessions"},
 		Summary:             "Create session by email and password",
@@ -26,7 +26,7 @@ func (provider *provider) addSessionRoutes(router *mux.Router) error {
 		return err
 	}
 
-	if err := router.Handle("/api/v2/sessions/context", handler.New(provider.authZ.OpenAccess(provider.sessionHandler.GetSessionContext), handler.OpenAPIDef{
+	if err := router.Handle("/api/v2/sessions/context", handler.New(provider.authzMiddleware.OpenAccess(provider.sessionHandler.GetSessionContext), handler.OpenAPIDef{
 		ID:                  "GetSessionContext",
 		Tags:                []string{"sessions"},
 		Summary:             "Get session context",
@@ -43,7 +43,7 @@ func (provider *provider) addSessionRoutes(router *mux.Router) error {
 		return err
 	}
 
-	if err := router.Handle("/api/v2/sessions/sso_context", handler.New(provider.authZ.OpenAccess(provider.sessionHandler.GetSessionSSOContext), handler.OpenAPIDef{
+	if err := router.Handle("/api/v2/sessions/sso_context", handler.New(provider.authzMiddleware.OpenAccess(provider.sessionHandler.GetSessionSSOContext), handler.OpenAPIDef{
 		ID:                  "GetSessionSSOContext",
 		Tags:                []string{"sessions"},
 		Summary:             "Get session SSO context",
@@ -60,7 +60,7 @@ func (provider *provider) addSessionRoutes(router *mux.Router) error {
 		return err
 	}
 
-	if err := router.Handle("/api/v2/sessions/logout_context", handler.New(provider.authZ.OpenAccess(provider.sessionHandler.GetSessionLogoutContext), handler.OpenAPIDef{
+	if err := router.Handle("/api/v2/sessions/logout_context", handler.New(provider.authzMiddleware.OpenAccess(provider.sessionHandler.GetSessionLogoutContext), handler.OpenAPIDef{
 		ID:                  "GetSessionLogoutContext",
 		Tags:                []string{"sessions"},
 		Summary:             "Get session logout context",
@@ -77,7 +77,7 @@ func (provider *provider) addSessionRoutes(router *mux.Router) error {
 		return err
 	}
 
-	if err := router.Handle("/api/v2/sessions/rotate", handler.New(provider.authZ.OpenAccess(provider.sessionHandler.RotateSession), handler.OpenAPIDef{
+	if err := router.Handle("/api/v2/sessions/rotate", handler.New(provider.authzMiddleware.OpenAccess(provider.sessionHandler.RotateSession), handler.OpenAPIDef{
 		ID:                  "RotateSession",
 		Tags:                []string{"sessions"},
 		Summary:             "Rotate session",
@@ -94,7 +94,7 @@ func (provider *provider) addSessionRoutes(router *mux.Router) error {
 		return err
 	}
 
-	if err := router.Handle("/api/v2/sessions", handler.New(provider.authZ.OpenAccess(provider.sessionHandler.DeleteSession), handler.OpenAPIDef{
+	if err := router.Handle("/api/v2/sessions", handler.New(provider.authzMiddleware.OpenAccess(provider.sessionHandler.DeleteSession), handler.OpenAPIDef{
 		ID:                  "DeleteSession",
 		Tags:                []string{"sessions"},
 		Summary:             "Delete session",
@@ -111,7 +111,7 @@ func (provider *provider) addSessionRoutes(router *mux.Router) error {
 		return err
 	}
 
-	if err := router.Handle("/api/v1/complete/google", handler.New(provider.authZ.OpenAccess(provider.sessionHandler.CreateSessionByGoogleCallback), handler.OpenAPIDef{
+	if err := router.Handle("/api/v1/complete/google", handler.New(provider.authzMiddleware.OpenAccess(provider.sessionHandler.CreateSessionByGoogleCallback), handler.OpenAPIDef{
 		ID:                  "CreateSessionByGoogleCallback",
 		Tags:                []string{"sessions"},
 		Summary:             "Create session by google callback",
@@ -128,7 +128,7 @@ func (provider *provider) addSessionRoutes(router *mux.Router) error {
 		return err
 	}
 
-	if err := router.Handle("/api/v1/complete/saml", handler.New(provider.authZ.OpenAccess(provider.sessionHandler.CreateSessionBySAMLCallback), handler.OpenAPIDef{
+	if err := router.Handle("/api/v1/complete/saml", handler.New(provider.authzMiddleware.OpenAccess(provider.sessionHandler.CreateSessionBySAMLCallback), handler.OpenAPIDef{
 		ID:          "CreateSessionBySAMLCallback",
 		Tags:        []string{"sessions"},
 		Summary:     "Create session by saml callback",
@@ -148,7 +148,7 @@ func (provider *provider) addSessionRoutes(router *mux.Router) error {
 		return err
 	}
 
-	if err := router.Handle("/api/v1/complete/oidc", handler.New(provider.authZ.OpenAccess(provider.sessionHandler.CreateSessionByOIDCCallback), handler.OpenAPIDef{
+	if err := router.Handle("/api/v1/complete/oidc", handler.New(provider.authzMiddleware.OpenAccess(provider.sessionHandler.CreateSessionByOIDCCallback), handler.OpenAPIDef{
 		ID:                  "CreateSessionByOIDCCallback",
 		Tags:                []string{"sessions"},
 		Summary:             "Create session by oidc callback",

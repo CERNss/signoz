@@ -2,10 +2,11 @@ import { useCallback, useMemo } from 'react';
 import { useQueryClient } from 'react-query';
 import {
 	getGetServiceAccountRolesQueryKey,
-	useCreateServiceAccountRole,
+	useCreateServiceAccountRoleDeprecated,
+	useDeleteServiceAccountRoleDeprecated,
 	useGetServiceAccountRoles,
 } from 'api/generated/services/serviceaccount';
-import type { AuthtypesRoleDTO } from 'api/generated/services/sigNoz.schemas';
+import type { AuthtypesGettableRoleDTO } from 'api/generated/services/sigNoz.schemas';
 import { retryOn429 } from 'utils/errorUtils';
 
 const enum PromiseStatus {
@@ -20,27 +21,35 @@ export interface RoleUpdateFailure {
 }
 
 interface UseServiceAccountRoleManagerResult {
-	currentRoles: AuthtypesRoleDTO[];
+	currentRoles: AuthtypesGettableRoleDTO[];
 	isLoading: boolean;
 	applyDiff: (
 		localRoleIds: string[],
-		availableRoles: AuthtypesRoleDTO[],
+		availableRoles: AuthtypesGettableRoleDTO[],
 	) => Promise<RoleUpdateFailure[]>;
 }
 
 export function useServiceAccountRoleManager(
 	accountId: string,
+	options?: { enabled?: boolean },
 ): UseServiceAccountRoleManagerResult {
 	const queryClient = useQueryClient();
 
-	const { data, isLoading } = useGetServiceAccountRoles({ id: accountId });
+	const { data, isLoading } = useGetServiceAccountRoles(
+		{ id: accountId },
+		{ query: { enabled: options?.enabled ?? true } },
+	);
 
-	const currentRoles = useMemo<AuthtypesRoleDTO[]>(() => data?.data ?? [], [
-		data?.data,
-	]);
+	const currentRoles = useMemo<AuthtypesGettableRoleDTO[]>(
+		() => data?.data ?? [],
+		[data?.data],
+	);
 
 	// the retry for these mutations is safe due to being idempotent on backend
-	const { mutateAsync: createRole } = useCreateServiceAccountRole({
+	const { mutateAsync: createRole } = useCreateServiceAccountRoleDeprecated({
+		mutation: { retry: retryOn429 },
+	});
+	const { mutateAsync: deleteRole } = useDeleteServiceAccountRoleDeprecated({
 		mutation: { retry: retryOn429 },
 	});
 
@@ -55,7 +64,7 @@ export function useServiceAccountRoleManager(
 	const applyDiff = useCallback(
 		async (
 			localRoleIds: string[],
-			availableRoles: AuthtypesRoleDTO[],
+			availableRoles: AuthtypesGettableRoleDTO[],
 		): Promise<RoleUpdateFailure[]> => {
 			const currentRoleIds = new Set(
 				currentRoles.map((r) => r.id).filter(Boolean),
@@ -67,13 +76,20 @@ export function useServiceAccountRoleManager(
 			const addedRoles = availableRoles.filter(
 				(r) => r.id && desiredRoleIds.has(r.id) && !currentRoleIds.has(r.id),
 			);
+			const removedRoles = currentRoles.filter(
+				(r) => r.id && !desiredRoleIds.has(r.id),
+			);
 
-			// TODO: re-enable deletes once BE for this is streamlined
 			const allOperations = [
 				...addedRoles.map((role) => ({
 					role,
 					run: (): ReturnType<typeof createRole> =>
 						createRole({ pathParams: { id: accountId }, data: { id: role.id } }),
+				})),
+				...removedRoles.map((role) => ({
+					role,
+					run: (): ReturnType<typeof deleteRole> =>
+						deleteRole({ pathParams: { id: accountId, rid: role.id ?? '' } }),
 				})),
 			];
 
@@ -105,7 +121,7 @@ export function useServiceAccountRoleManager(
 
 			return failures;
 		},
-		[accountId, currentRoles, createRole, invalidateRoles],
+		[accountId, currentRoles, createRole, deleteRole, invalidateRoles],
 	);
 
 	return {

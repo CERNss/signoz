@@ -9,18 +9,18 @@ import {
 } from 'lib/query/transformQueryBuilderData';
 import { Having, HavingForm } from 'types/api/queryBuilder/queryBuilderData';
 import { SelectOption } from 'types/common/select';
-import { popupContainer } from 'utils/selectPopupContainer';
+import { useSelectPopupContainer } from 'utils/selectPopupContainer';
 
 import { getHavingObject, isValidHavingValue } from '../../utils';
 import { HavingFilterProps, HavingTagRenderProps } from './types';
 
 function HavingFilter({ formula, onChange }: HavingFilterProps): JSX.Element {
+	const getPopupContainer = useSelectPopupContainer();
 	const { having } = formula;
 	const [searchText, setSearchText] = useState<string>('');
 	const [localValues, setLocalValues] = useState<string[]>([]);
-	const [currentFormValue, setCurrentFormValue] = useState<HavingForm>(
-		initialHavingValues,
-	);
+	const [currentFormValue, setCurrentFormValue] =
+		useState<HavingForm>(initialHavingValues);
 	const [options, setOptions] = useState<SelectOption<string, string>[]>([]);
 
 	const { isMulti } = useTagValidation(
@@ -172,7 +172,7 @@ function HavingFilter({ formula, onChange }: HavingFilterProps): JSX.Element {
 
 	return (
 		<Select
-			getPopupContainer={popupContainer}
+			getPopupContainer={getPopupContainer}
 			autoClearSearchValue={false}
 			mode="multiple"
 			onSearch={handleSearch}

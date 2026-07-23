@@ -1,25 +1,34 @@
-import { useCallback } from 'react';
-import { Badge } from '@signozhq/badge';
-import { LockKeyhole } from '@signozhq/icons';
-import { Input } from '@signozhq/input';
-import type { AuthtypesRoleDTO } from 'api/generated/services/sigNoz.schemas';
+import { useCallback, useEffect, useState } from 'react';
+import { Check, Copy, LockKeyhole } from '@signozhq/icons';
+import { Badge } from '@signozhq/ui/badge';
+import { Button } from '@signozhq/ui/button';
+import { Input } from '@signozhq/ui/input';
+import { useCopyToClipboard } from 'react-use';
+import type { AuthtypesGettableRoleDTO } from 'api/generated/services/sigNoz.schemas';
+import AuthZTooltip from 'lib/authz/components/AuthZTooltip/AuthZTooltip';
+import { withAuthZContent } from 'lib/authz/components/withAuthZ/withAuthZContent';
 import RolesSelect from 'components/RolesSelect';
 import { DATE_TIME_FORMATS } from 'constants/dateTimeFormats';
 import { ServiceAccountRow } from 'container/ServiceAccountsSettings/utils';
+import {
+	buildSAReadPermission,
+	buildSAUpdatePermission,
+} from 'lib/authz/hooks/useAuthZ/permissions/service-account.permissions';
 import { useTimezone } from 'providers/Timezone';
 import APIError from 'types/api/error';
 
 import SaveErrorItem from './SaveErrorItem';
 import type { SaveError } from './utils';
+import { Skeleton } from 'antd';
 
 interface OverviewTabProps {
 	account: ServiceAccountRow;
 	localName: string;
 	onNameChange: (v: string) => void;
-	localRole: string;
-	onRoleChange: (v: string | undefined) => void;
+	localRoles: string[];
+	onRolesChange: (v: string[]) => void;
 	isDisabled: boolean;
-	availableRoles: AuthtypesRoleDTO[];
+	availableRoles: AuthtypesGettableRoleDTO[];
 	rolesLoading?: boolean;
 	rolesError?: boolean;
 	rolesErrorObj?: APIError | undefined;
@@ -31,8 +40,8 @@ function OverviewTab({
 	account,
 	localName,
 	onNameChange,
-	localRole,
-	onRoleChange,
+	localRoles,
+	onRolesChange,
 	isDisabled,
 	availableRoles,
 	rolesLoading,
@@ -42,6 +51,23 @@ function OverviewTab({
 	saveErrors = [],
 }: OverviewTabProps): JSX.Element {
 	const { formatTimezoneAdjustedTimestamp } = useTimezone();
+	const [, copyToClipboard] = useCopyToClipboard();
+	const [hasCopiedId, setHasCopiedId] = useState(false);
+
+	const handleCopyId = useCallback((): void => {
+		if (account.id) {
+			copyToClipboard(account.id);
+			setHasCopiedId(true);
+		}
+	}, [account.id, copyToClipboard]);
+
+	useEffect(() => {
+		if (hasCopiedId) {
+			const timer = setTimeout(() => setHasCopiedId(false), 2000);
+			return (): void => clearTimeout(timer);
+		}
+		return undefined;
+	}, [hasCopiedId]);
 
 	const formatTimestamp = useCallback(
 		(ts: string | null | undefined): string => {
@@ -64,19 +90,43 @@ function OverviewTab({
 					Name
 				</label>
 				{isDisabled ? (
-					<div className="sa-drawer__input-wrapper sa-drawer__input-wrapper--disabled">
-						<span className="sa-drawer__input-text">{localName || '—'}</span>
-						<LockKeyhole size={14} className="sa-drawer__lock-icon" />
-					</div>
+					<AuthZTooltip checks={[buildSAUpdatePermission(account.id)]}>
+						<div className="sa-drawer__input-wrapper sa-drawer__input-wrapper--disabled">
+							<span className="sa-drawer__input-text">{localName || '—'}</span>
+							<LockKeyhole size={14} className="sa-drawer__lock-icon" />
+						</div>
+					</AuthZTooltip>
 				) : (
-					<Input
-						id="sa-name"
-						value={localName}
-						onChange={(e): void => onNameChange(e.target.value)}
-						className="sa-drawer__input"
-						placeholder="Enter name"
-					/>
+					<AuthZTooltip checks={[buildSAUpdatePermission(account.id)]}>
+						<Input
+							id="sa-name"
+							value={localName}
+							onChange={(e): void => onNameChange(e.target.value)}
+							placeholder="Enter name"
+						/>
+					</AuthZTooltip>
 				)}
+			</div>
+
+			<div className="sa-drawer__field">
+				<label className="sa-drawer__label" htmlFor="sa-id">
+					ID
+				</label>
+				<div className="sa-drawer__input-wrapper sa-drawer__input-wrapper--disabled">
+					<span className="sa-drawer__input-text">{account.id || '—'}</span>
+					{account.id && (
+						<Button
+							variant="link"
+							color="secondary"
+							onClick={handleCopyId}
+							className="sa-drawer__copy-btn"
+							data-testid="copy-id-btn"
+						>
+							{hasCopiedId ? <Check size={14} /> : <Copy size={14} />}
+						</Button>
+					)}
+					<LockKeyhole size={14} className="sa-drawer__lock-icon" />
+				</div>
 			</div>
 
 			<div className="sa-drawer__field">
@@ -96,10 +146,15 @@ function OverviewTab({
 				{isDisabled ? (
 					<div className="sa-drawer__input-wrapper sa-drawer__input-wrapper--disabled">
 						<div className="sa-drawer__disabled-roles">
-							{localRole ? (
-								<Badge color="vanilla">
-									{availableRoles.find((r) => r.id === localRole)?.name ?? localRole}
-								</Badge>
+							{localRoles.length > 0 ? (
+								localRoles.map((roleId) => {
+									const role = availableRoles.find((r) => r.id === roleId);
+									return (
+										<Badge key={roleId} color="vanilla">
+											{role?.name ?? roleId}
+										</Badge>
+									);
+								})
 							) : (
 								<span className="sa-drawer__input-text">—</span>
 							)}
@@ -109,14 +164,15 @@ function OverviewTab({
 				) : (
 					<RolesSelect
 						id="sa-roles"
+						mode="multiple"
 						roles={availableRoles}
 						loading={rolesLoading}
 						isError={rolesError}
 						error={rolesErrorObj}
 						onRefetch={onRefetchRoles}
-						value={localRole}
-						onChange={onRoleChange}
-						placeholder="Select role"
+						value={localRoles}
+						onChange={onRolesChange}
+						placeholder="Select roles"
 					/>
 				)}
 			</div>
@@ -166,4 +222,9 @@ function OverviewTab({
 	);
 }
 
-export default OverviewTab;
+export default withAuthZContent(OverviewTab, {
+	checks: (props): ReturnType<typeof buildSAReadPermission>[] => [
+		buildSAReadPermission(props.account.id),
+	],
+	fallbackOnLoading: <Skeleton active paragraph={{ rows: 6 }} />,
+});

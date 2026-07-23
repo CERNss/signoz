@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/SigNoz/signoz/pkg/alertmanager"
+	"github.com/SigNoz/signoz/pkg/alertmanager/alertmanagerserver"
 	alertmanagermock "github.com/SigNoz/signoz/pkg/alertmanager/alertmanagertest"
 	"github.com/SigNoz/signoz/pkg/instrumentation/instrumentationtest"
 	"github.com/SigNoz/signoz/pkg/prometheus"
@@ -25,7 +26,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	cmock "github.com/srikanthccv/ClickHouse-go-mock"
+	cmock "github.com/SigNoz/clickhouse-go-mock"
 )
 
 func TestManager_TestNotification_SendUnmatched_ThresholdRule(t *testing.T) {
@@ -51,6 +52,7 @@ func TestManager_TestNotification_SendUnmatched_ThresholdRule(t *testing.T) {
 					fAlert := am.(*alertmanagermock.MockAlertmanager)
 					// mock set notification config
 					fAlert.On("SetNotificationConfig", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+					fAlert.On("Config").Return(alertmanagerserver.Config{ExternalURL: mustParseURL(t, "http://localhost:8080")})
 					// for saving temp alerts that are triggered via TestNotification
 					if tc.ExpectAlerts > 0 {
 						fAlert.On("TestAlert", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
@@ -166,6 +168,7 @@ func TestManager_TestNotification_SendUnmatched_PromRule(t *testing.T) {
 					mockAM := am.(*alertmanagermock.MockAlertmanager)
 					// mock set notification config
 					mockAM.On("SetNotificationConfig", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil)
+					mockAM.On("Config").Return(alertmanagerserver.Config{ExternalURL: mustParseURL(t, "http://localhost:8080")})
 					// for saving temp alerts that are triggered via TestNotification
 					if tc.ExpectAlerts > 0 {
 						mockAM.On("TestAlert", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
@@ -237,16 +240,16 @@ func TestManager_TestNotification_SendUnmatched_PromRule(t *testing.T) {
 					mock := mockStore.Mock()
 
 					// Mock the fingerprint query (for Prometheus label matching)
+					// args: $1=metric_name (the __name__ matcher maps onto the column)
 					mock.ExpectQuery("SELECT fingerprint, any").
-						WithArgs("test_metric", "__name__", "test_metric").
+						WithArgs("test_metric").
 						WillReturnRows(fingerprintRows)
 
 					// Mock the samples query (for Prometheus metric data)
+					// args: metric_name IN (discovered names), subquery metric_name, start, end
 					mock.ExpectQuery("SELECT metric_name, fingerprint, unix_milli").
 						WithArgs(
 							"test_metric",
-							"test_metric",
-							"__name__",
 							"test_metric",
 							queryStart,
 							queryEnd,

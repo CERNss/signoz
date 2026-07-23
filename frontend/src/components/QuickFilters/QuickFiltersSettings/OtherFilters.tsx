@@ -20,6 +20,7 @@ function OtherFiltersSkeleton(): JSX.Element {
 				<Skeleton.Input
 					active
 					size="small"
+					className="qf-other-filters-skeleton"
 					// eslint-disable-next-line react/no-array-index-key
 					key={index}
 				/>
@@ -48,52 +49,46 @@ function OtherFilters({
 		[signal],
 	);
 
-	const {
-		data: suggestionsData,
-		isFetching: isFetchingSuggestions,
-	} = useGetAttributeSuggestions(
-		{
-			searchText: inputValue,
-			dataSource: SIGNAL_DATA_SOURCE_MAP[signal as SignalType],
-			filters: {} as TagFilter,
-		},
-		{
-			queryKey: [REACT_QUERY_KEY.GET_OTHER_FILTERS, inputValue],
-			enabled: !!signal && isLogDataSource,
-		},
-	);
+	const { data: suggestionsData, isFetching: isFetchingSuggestions } =
+		useGetAttributeSuggestions(
+			{
+				searchText: inputValue,
+				dataSource: SIGNAL_DATA_SOURCE_MAP[signal as SignalType],
+				filters: {} as TagFilter,
+			},
+			{
+				queryKey: [REACT_QUERY_KEY.GET_OTHER_FILTERS, inputValue],
+				enabled: !!signal && isLogDataSource,
+			},
+		);
 
-	const {
-		data: aggregateKeysData,
-		isFetching: isFetchingAggregateKeys,
-	} = useGetAggregateKeys(
-		{
-			searchText: inputValue,
-			dataSource: SIGNAL_DATA_SOURCE_MAP[signal as SignalType],
-			aggregateOperator: 'noop',
-			aggregateAttribute: '',
-			tagType: '',
-		},
-		{
-			queryKey: [REACT_QUERY_KEY.GET_OTHER_FILTERS, inputValue],
-			enabled: !!signal && !isLogDataSource && !isMeterDataSource,
-		},
-	);
+	const { data: aggregateKeysData, isFetching: isFetchingAggregateKeys } =
+		useGetAggregateKeys(
+			{
+				searchText: inputValue,
+				dataSource: SIGNAL_DATA_SOURCE_MAP[signal as SignalType],
+				aggregateOperator: 'noop',
+				aggregateAttribute: '',
+				tagType: '',
+			},
+			{
+				queryKey: [REACT_QUERY_KEY.GET_OTHER_FILTERS, inputValue],
+				enabled: !!signal && !isLogDataSource && !isMeterDataSource,
+			},
+		);
 
-	const {
-		data: fieldKeysData,
-		isLoading: isLoadingFieldKeys,
-	} = useGetQueryKeySuggestions(
-		{
-			searchText: inputValue,
-			signal: SIGNAL_DATA_SOURCE_MAP[signal as SignalType],
-			signalSource: 'meter',
-		},
-		{
-			queryKey: [REACT_QUERY_KEY.GET_OTHER_FILTERS, inputValue],
-			enabled: !!signal && isMeterDataSource,
-		},
-	);
+	const { data: fieldKeysData, isLoading: isLoadingFieldKeys } =
+		useGetQueryKeySuggestions(
+			{
+				searchText: inputValue,
+				signal: SIGNAL_DATA_SOURCE_MAP[signal as SignalType],
+				signalSource: 'meter',
+			},
+			{
+				queryKey: [REACT_QUERY_KEY.GET_OTHER_FILTERS, inputValue],
+				enabled: !!signal && isMeterDataSource,
+			},
+		);
 
 	const otherFilters = useMemo(() => {
 		let filterAttributes;
@@ -110,7 +105,7 @@ function OtherFilters({
 						dataType: attr.fieldDataType,
 						type: attr.fieldContext,
 						signal: attr.signal,
-					} as BaseAutocompleteData),
+					}) as BaseAutocompleteData,
 			);
 		} else {
 			filterAttributes = aggregateKeysData?.payload?.attributeKeys || [];

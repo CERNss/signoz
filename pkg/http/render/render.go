@@ -1,7 +1,9 @@
 package render
 
 import (
+	"math"
 	"net/http"
+	"strconv"
 
 	"github.com/SigNoz/signoz/pkg/errors"
 	jsoniter "github.com/json-iterator/go"
@@ -121,6 +123,14 @@ func Error(rw http.ResponseWriter, cause error) {
 		return
 	}
 
+	// Retry-After carries the explicit delay declared via
+	// errors.WithRetryAfter. Set it before WriteHeader so headers go on the wire.
+	d := errors.RetryDelayOf(cause)
+	if d.Seconds() > 0 {
+		rw.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(d.Seconds()))))
+	}
+
+	rw.Header().Set("Content-Type", "application/json")
 	rw.WriteHeader(httpCode)
 	_, _ = rw.Write(body)
 }

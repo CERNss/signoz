@@ -1,20 +1,19 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useCopyToClipboard } from 'react-use';
 import type { TableColumnsType as ColumnsType } from 'antd';
-import {
-	Button,
-	Collapse,
-	Input,
-	Menu,
-	Popover,
-	Tooltip,
-	Typography,
-} from 'antd';
+import { Button, Collapse, Input, Menu, Popover, Tooltip } from 'antd';
+import { Typography } from '@signozhq/ui/typography';
 import logEvent from 'api/common/logEvent';
 import { useGetMetricAttributes } from 'api/generated/services/metrics';
 import { ResizeTable } from 'components/ResizeTable';
 import { DataType } from 'container/LogDetailedView/TableView';
-import { Check, Copy, Info, Search, SquareArrowOutUpRight } from 'lucide-react';
+import {
+	Check,
+	Copy,
+	Info,
+	Search,
+	SquareArrowOutUpRight,
+} from '@signozhq/icons';
 
 import { PANEL_TYPES } from '../../../constants/queryBuilder';
 import ROUTES from '../../../constants/routes';
@@ -49,19 +48,16 @@ function AllAttributes({
 		isLoading: isLoadingAttributes,
 		isError: isErrorAttributes,
 		refetch: refetchAttributes,
-	} = useGetMetricAttributes(
-		{
-			metricName,
-		},
-		{
-			start: minTime ? Math.floor(minTime / 1000000) : undefined,
-			end: maxTime ? Math.floor(maxTime / 1000000) : undefined,
-		},
-	);
+	} = useGetMetricAttributes({
+		metricName,
+		start: minTime ? Math.floor(minTime / 1000000) : undefined,
+		end: maxTime ? Math.floor(maxTime / 1000000) : undefined,
+	});
 
-	const attributes = useMemo(() => attributesData?.data.attributes ?? [], [
-		attributesData,
-	]);
+	const attributes = useMemo(
+		() => attributesData?.data.attributes ?? [],
+		[attributesData],
+	);
 
 	const { handleExplorerTabChange } = useHandleExplorerTabChange();
 
@@ -173,7 +169,7 @@ function AllAttributes({
 							key: attribute.key,
 							value: attribute.values,
 						},
-				  }))
+					}))
 				: [],
 		[filteredAttributes],
 	);

@@ -1,5 +1,6 @@
 import {
 	MouseEvent,
+	ReactNode,
 	useCallback,
 	useEffect,
 	useMemo,
@@ -25,7 +26,14 @@ import {
 	verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Button, Dropdown, MenuProps, Modal, Tooltip } from 'antd';
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from '@signozhq/ui/dropdown-menu';
+import { Button, MenuProps, Modal, Tooltip } from 'antd';
 import logEvent from 'api/common/logEvent';
 import { Logout } from 'api/utils';
 import updateUserPreference from 'api/v1/user/preferences/name/update';
@@ -34,9 +42,12 @@ import { FeatureKeys } from 'constants/features';
 import ROUTES from 'constants/routes';
 import { GlobalShortcuts } from 'constants/shortcuts/globalShortcuts';
 import { USER_PREFERENCES } from 'constants/userPreferences';
+import { useAIAssistantStore } from 'container/AIAssistant/store/useAIAssistantStore';
 import { useKeyboardHotkeys } from 'hooks/hotkeys/useKeyboardHotkeys';
 import useComponentPermission from 'hooks/useComponentPermission';
 import { useGetTenantLicense } from 'hooks/useGetTenantLicense';
+import { useIsAIAssistantEnabled } from 'hooks/useIsAIAssistantEnabled';
+import { useIsAIObservabilityEnabled } from 'hooks/useIsAIObservabilityEnabled';
 import { useNotifications } from 'hooks/useNotifications';
 import history from 'lib/history';
 import { isArray } from 'lodash-es';
@@ -51,12 +62,12 @@ import {
 	GitCommitVertical,
 	GripVertical,
 	LampDesk,
-	Logs,
+	List,
 	MousePointerClick,
 	PackagePlus,
 	ScrollText,
 	X,
-} from 'lucide-react';
+} from '@signozhq/icons';
 import { useAppContext } from 'providers/App/App';
 import { AppState } from 'store/reducers';
 import AppReducer from 'types/reducer/app';
@@ -70,13 +81,14 @@ import signozBrandLogoUrl from '@/assets/Logos/signoz-brand-logo.svg';
 
 import { useCmdK } from '../../providers/cmdKProvider';
 import { routeConfig } from './config';
-import { getQueryString } from './helper';
+import { buildNavUrl, getQueryString } from './helper';
 import {
 	defaultMoreMenuItems,
 	getUserSettingsDropdownMenuItems,
 	helpSupportDropdownMenuItems as DefaultHelpSupportDropdownMenuItems,
 	helpSupportMenuItem,
 	primaryMenuItems,
+	aiAssistantMenuItem,
 } from './menuItems';
 import NavItem from './NavItem/NavItem';
 import {
@@ -107,13 +119,8 @@ const getNavLicenseTagOverride = (value?: string): string => {
 };
 
 function SortableFilter({ item }: { item: SidebarItem }): JSX.Element {
-	const {
-		attributes,
-		listeners,
-		setNodeRef,
-		transform,
-		transition,
-	} = useSortable({ id: item.key });
+	const { attributes, listeners, setNodeRef, transform, transition } =
+		useSortable({ id: item.key });
 
 	const style = {
 		transform: CSS.Transform.toString(transform),
@@ -178,12 +185,10 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 		},
 	);
 
-	const [
-		helpSupportDropdownMenuItems,
-		setHelpSupportDropdownMenuItems,
-	] = useState<(SidebarItem | DropdownSeparator)[]>(
-		DefaultHelpSupportDropdownMenuItems,
-	);
+	const [helpSupportDropdownMenuItems, setHelpSupportDropdownMenuItems] =
+		useState<(SidebarItem | DropdownSeparator)[]>(
+			DefaultHelpSupportDropdownMenuItems,
+		);
 
 	const [tempPinnedMenuItems, setTempPinnedMenuItems] = useState<SidebarItem[]>(
 		[],
@@ -191,7 +196,9 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 
 	const [hasScroll, setHasScroll] = useState(false);
 	const navTopSectionRef = useRef<HTMLDivElement>(null);
+	const sidenavRef = useRef<HTMLDivElement>(null);
 	const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+	const isDropdownOpenRef = useRef(false);
 
 	const [isHovered, setIsHovered] = useState(false);
 	const [pinnedMenuItems, setPinnedMenuItems] = useState<SidebarItem[]>([]);
@@ -204,7 +211,25 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 	}, []);
 
 	const handleMouseLeave = useCallback(() => {
+		// When the dropdown is open its content renders in a portal outside
+		// the sidenav, which causes the browser to fire mouseleave on the
+		// sidenav. Keep the sidenav expanded in that case.
+		if (isDropdownOpenRef.current) {
+			return;
+		}
 		setIsHovered(false);
+	}, []);
+
+	const handleDropdownOpenChange = useCallback((open: boolean): void => {
+		isDropdownOpenRef.current = open;
+		setIsDropdownOpen(open);
+		if (!open) {
+			// Re-sync hover state on close: the cursor may have moved to the
+			// portal content (outside .sideNav), so mouseleave never fired.
+			requestAnimationFrame(() => {
+				setIsHovered(sidenavRef.current?.matches(':hover') ?? false);
+			});
+		}
 	}, []);
 
 	const checkScroll = useCallback((): void => {
@@ -253,13 +278,18 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 	const [licenseTag, setLicenseTag] = useState('');
 	const isAdmin = user.role === USER_ROLES.ADMIN;
 	const isEditor = user.role === USER_ROLES.EDITOR;
+	const isAIAssistantEnabled = useIsAIAssistantEnabled();
+	const isAIObservabilityEnabled = useIsAIObservabilityEnabled();
+	const aiAssistantActiveConversationId = useAIAssistantStore(
+		(s) => s.activeConversationId,
+	);
 
 	// Compute initial pinned items and secondary menu items synchronously to avoid flash
 	const computedPinnedMenuItems = useMemo(() => {
 		const navShortcutsPreference = userPreferences?.find(
 			(preference) => preference.name === USER_PREFERENCES.NAV_SHORTCUTS,
 		);
-		const navShortcuts = (navShortcutsPreference?.value as unknown) as
+		const navShortcuts = navShortcutsPreference?.value as unknown as
 			| string[]
 			| undefined;
 
@@ -285,15 +315,22 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 		const shouldShowIntegrationsValue =
 			(isCloudUser || isEnterpriseSelfHostedUser) && (isAdmin || isEditor);
 
+		const isEnabledForItem = (item: SidebarItem): boolean | undefined => {
+			if (item.key === ROUTES.INTEGRATIONS) {
+				return shouldShowIntegrationsValue;
+			}
+			if (item.key === ROUTES.AI_OBSERVABILITY_OVERVIEW) {
+				return isAIObservabilityEnabled;
+			}
+			return item.isEnabled;
+		};
+
 		return defaultMoreMenuItems.map((item) => ({
 			...item,
 			isPinned: computedPinnedMenuItems.some(
 				(pinned) => pinned.itemKey === item.itemKey,
 			),
-			isEnabled:
-				item.key === ROUTES.INTEGRATIONS
-					? shouldShowIntegrationsValue
-					: item.isEnabled,
+			isEnabled: isEnabledForItem(item),
 		}));
 	}, [
 		computedPinnedMenuItems,
@@ -301,6 +338,7 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 		isEnterpriseSelfHostedUser,
 		isAdmin,
 		isEditor,
+		isAIObservabilityEnabled,
 	]);
 
 	// Track if we've done the initial sync (to avoid overwriting user actions during session)
@@ -315,10 +353,6 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 			hasInitializedRef.current = true;
 		}
 	}, [computedPinnedMenuItems, computedSecondaryMenuItems, userPreferences]);
-
-	const isOnboardingV3Enabled = featureFlags?.find(
-		(flag) => flag.name === FeatureKeys.ONBOARDING_V3,
-	)?.active;
 
 	const isChatSupportEnabled = featureFlags?.find(
 		(flag) => flag.name === FeatureKeys.CHAT_SUPPORT,
@@ -339,10 +373,8 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 		latestVersion,
 	);
 
-	const [
-		showVersionUpdateNotification,
-		setShowVersionUpdateNotification,
-	] = useState(false);
+	const [showVersionUpdateNotification, setShowVersionUpdateNotification] =
+		useState(false);
 
 	const [isMoreMenuCollapsed, setIsMoreMenuCollapsed] = useState(false);
 
@@ -438,7 +470,7 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 	);
 
 	const handleReorderShortcutNavItems = (): void => {
-		logEvent('Sidebar V2: Save shortcuts clicked', {
+		void logEvent('Sidebar V2: Save shortcuts clicked', {
 			shortcuts: tempPinnedMenuItems.map((item) => item.key),
 		});
 		setPinnedMenuItems(tempPinnedMenuItems);
@@ -466,19 +498,15 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 	const isWorkspaceBlocked = trialInfo?.workSpaceBlock || false;
 
 	const onClickGetStarted = (event: MouseEvent): void => {
-		logEvent('Sidebar: Menu clicked', {
-			menuRoute: '/get-started',
+		void logEvent('Sidebar: Menu clicked', {
+			menuRoute: ROUTES.GET_STARTED_WITH_CLOUD,
 			menuLabel: 'Get Started',
 		});
 
-		const onboaringRoute = isOnboardingV3Enabled
-			? ROUTES.GET_STARTED_WITH_CLOUD
-			: ROUTES.GET_STARTED;
-
 		if (isModifierKeyPressed(event)) {
-			openInNewTab(onboaringRoute);
+			openInNewTab(ROUTES.GET_STARTED_WITH_CLOUD);
 		} else {
-			history.push(onboaringRoute);
+			history.push(ROUTES.GET_STARTED_WITH_CLOUD);
 		}
 	};
 
@@ -488,12 +516,13 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 			const availableParams = routeConfig[key];
 
 			const queryString = getQueryString(availableParams || [], params);
+			const url = buildNavUrl(key, queryString);
 
 			if (pathname !== key) {
 				if (event && isModifierKeyPressed(event)) {
-					openInNewTab(`${key}?${queryString.join('&')}`);
+					openInNewTab(url);
 				} else {
-					history.push(`${key}?${queryString.join('&')}`, {
+					history.push(url, {
 						from: pathname,
 					});
 				}
@@ -502,13 +531,15 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 		[pathname, search],
 	);
 
-	const activeMenuKey = useMemo(() => getActiveMenuKeyFromPath(pathname), [
-		pathname,
-	]);
+	const activeMenuKey = useMemo(
+		() => getActiveMenuKeyFromPath(pathname),
+		[pathname],
+	);
 
-	const isSettingsPage = useMemo(() => pathname.startsWith(ROUTES.SETTINGS), [
-		pathname,
-	]);
+	const isSettingsPage = useMemo(
+		() => pathname.startsWith(ROUTES.SETTINGS),
+		[pathname],
+	);
 
 	const userSettingsDropdownMenuItems: MenuProps['items'] = useMemo(
 		() =>
@@ -664,10 +695,26 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 			}
 		} else if (item.key === 'quick-search') {
 			openCmdK();
+		} else if (item.key === aiAssistantMenuItem.key) {
+			// Resume the active conversation when one exists — without this
+			// every sidenav click hits `/ai-assistant/new` which the page
+			// resolves by spawning a fresh thread. Only fall back to /new
+			// when there's no active conversation to resume.
+			const aiPath = aiAssistantActiveConversationId
+				? ROUTES.AI_ASSISTANT.replace(
+						':conversationId',
+						aiAssistantActiveConversationId,
+					)
+				: aiAssistantMenuItem.key;
+			if (isModifierKeyPressed(event)) {
+				openInNewTab(aiPath);
+			} else {
+				history.push(aiPath);
+			}
 		} else if (item) {
 			onClickHandler(item?.key as string, event);
 		}
-		logEvent('Sidebar V2: Menu clicked', {
+		void logEvent('Sidebar V2: Menu clicked', {
 			menuRoute: item?.key,
 			menuLabel: item?.label,
 		});
@@ -771,8 +818,9 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 	}, [deregisterShortcut, onClickHandler, registerShortcut]);
 
 	const isPinnedItem = useMemo(
-		() => (item: SidebarItem): boolean =>
-			secondaryMenuItems.some((i) => i.key === item.key && i.isPinned),
+		() =>
+			(item: SidebarItem): boolean =>
+				secondaryMenuItems.some((i) => i.key === item.key && i.isPinned),
 		[secondaryMenuItems],
 	);
 
@@ -809,7 +857,7 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 					onTogglePin={
 						allowPin
 							? (item): void => {
-									logEvent(
+									void logEvent(
 										`Sidebar V2: Menu item ${item.isPinned ? 'unpinned' : 'pinned'}`,
 										{
 											menuRoute: item.key,
@@ -817,7 +865,7 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 										},
 									);
 									onTogglePin(item);
-							  }
+								}
 							: undefined
 					}
 					onClick={(event): void => {
@@ -850,13 +898,13 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 		);
 
 		if (item && !('type' in item) && item.isExternal && item.url) {
-			window.open(item.url, '_blank');
+			openInNewTab(item.url);
 		}
 
 		const event = (info as SidebarItem & { domEvent?: MouseEvent }).domEvent;
 
 		if (item && !('type' in item)) {
-			logEvent('Help Popover: Item clicked', {
+			void logEvent('Help Popover: Item clicked', {
 				menuRoute: item.key,
 				menuLabel: String(item.label),
 			});
@@ -871,9 +919,9 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 					break;
 				case 'invite-collaborators':
 					if (event && isModifierKeyPressed(event)) {
-						openInNewTab(`${ROUTES.ORG_SETTINGS}#invite-team-members`);
+						openInNewTab(`${ROUTES.MEMBERS_SETTINGS}?invite=true`);
 					} else {
-						history.push(`${ROUTES.ORG_SETTINGS}#invite-team-members`);
+						history.push(`${ROUTES.MEMBERS_SETTINGS}?invite=true`);
 					}
 					break;
 				case 'chat-support':
@@ -905,7 +953,7 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 			menuLabel = item.label;
 		}
 
-		logEvent('Settings Popover: Item clicked', {
+		void logEvent('Settings Popover: Item clicked', {
 			menuRoute: item?.key,
 			menuLabel,
 		});
@@ -942,7 +990,7 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 				}
 				break;
 			case 'logout':
-				Logout();
+				void Logout();
 				break;
 			default:
 		}
@@ -974,9 +1022,11 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 	return (
 		<div className={cx('sidenav-container', isPinned && 'pinned')}>
 			<div
+				ref={sidenavRef}
 				className={cx(
 					'sideNav',
 					isPinned && 'pinned',
+					isHovered && 'is-hovered',
 					isDropdownOpen && 'dropdown-open',
 				)}
 				onMouseEnter={handleMouseEnter}
@@ -995,7 +1045,7 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 								<img src={signozBrandLogoUrl} alt="SigNoz" />
 							</div>
 
-							{displayedLicenseTag && (
+							{(displayedLicenseTag || effectiveCurrentVersion) && (
 								<div
 									className={cx(
 										'brand-title-section',
@@ -1006,7 +1056,9 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 											'version-update-notification',
 									)}
 								>
-									<span className="license-type"> {displayedLicenseTag} </span>
+									{displayedLicenseTag && (
+										<span className="license-type"> {displayedLicenseTag} </span>
+									)}
 
 									{effectiveCurrentVersion && (
 										<Tooltip
@@ -1028,7 +1080,12 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 												)
 											}
 										>
-											<div className="version-container">
+											<div
+												className={cx(
+													'version-container',
+													!displayedLicenseTag && 'version-container-standalone',
+												)}
+											>
 												<span
 													className={cx('version', changelog && 'version-clickable')}
 													onClick={onClickVersionHandler}
@@ -1096,11 +1153,11 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 													<div
 														className="nav-section-title-icon reorder"
 														onClick={(): void => {
-															logEvent('Sidebar V2: Manage shortcuts clicked', {});
+															void logEvent('Sidebar V2: Manage shortcuts clicked', {});
 															setIsReorderShortcutNavItemsModalOpen(true);
 														}}
 													>
-														<Logs size={16} />
+														<List size={16} />
 													</div>
 												</Tooltip>
 											)}
@@ -1143,7 +1200,7 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 													return;
 												}
 												const newCollapsedState = !isMoreMenuCollapsed;
-												logEvent('Sidebar V2: More menu clicked', {
+												void logEvent('Sidebar V2: More menu clicked', {
 													action: isMoreMenuCollapsed ? 'expand' : 'collapse',
 												});
 												setIsMoreMenuCollapsed(newCollapsedState);
@@ -1172,11 +1229,11 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 										? renderNavItems(
 												activeMoreMenuItems.filter((item) => item.isEnabled),
 												true,
-										  )
+											)
 										: renderNavItems(
 												moreMenuItems.filter((item) => item.isEnabled),
 												true,
-										  )}
+											)}
 								</div>
 							</div>
 						)}
@@ -1194,47 +1251,98 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 
 					<div className="nav-bottom-section">
 						<div className="secondary-nav-items">
-							<div className="nav-dropdown-item">
-								<Dropdown
-									menu={{
-										items: helpSupportDropdownMenuItems,
-										onClick: handleHelpSupportMenuItemClick,
-									}}
-									placement="topLeft"
-									overlayClassName="nav-dropdown-overlay help-support-dropdown"
-									trigger={['click']}
-									onOpenChange={(open): void => setIsDropdownOpen(open)}
-								>
-									<div className="nav-item">
-										<div className="nav-item-data" data-testid="help-support-nav-item">
-											<div className="nav-item-icon">{helpSupportMenuItem.icon}</div>
+							{isAIAssistantEnabled && renderNavItems([aiAssistantMenuItem], false)}
 
-											<div className="nav-item-label">{helpSupportMenuItem.label}</div>
+							<div className="nav-dropdown-item">
+								<DropdownMenu onOpenChange={handleDropdownOpenChange}>
+									<DropdownMenuTrigger asChild>
+										<div className="nav-item">
+											<div className="nav-item-data" data-testid="help-support-nav-item">
+												<div className="nav-item-icon">{helpSupportMenuItem.icon}</div>
+
+												<div className="nav-item-label">{helpSupportMenuItem.label}</div>
+											</div>
 										</div>
-									</div>
-								</Dropdown>
+									</DropdownMenuTrigger>
+									<DropdownMenuContent
+										side="top"
+										align="start"
+										className="nav-dropdown-overlay help-support-dropdown"
+									>
+										{helpSupportDropdownMenuItems.map((item, idx) => {
+											if ('type' in item) {
+												// eslint-disable-next-line react/no-array-index-key
+												return <DropdownMenuSeparator key={`help-sep-${idx}`} />;
+											}
+											return (
+												<DropdownMenuItem
+													key={String(item.key)}
+													leftIcon={item.icon}
+													onClick={(e): void =>
+														handleHelpSupportMenuItemClick({
+															...item,
+															key: String(item.key),
+															domEvent: e.nativeEvent,
+														} as unknown as SidebarItem)
+													}
+												>
+													{item.label}
+												</DropdownMenuItem>
+											);
+										})}
+									</DropdownMenuContent>
+								</DropdownMenu>
 							</div>
 
 							<div className="nav-dropdown-item">
-								<Dropdown
-									menu={{
-										items: userSettingsDropdownMenuItems,
-										onClick: handleSettingsMenuItemClick,
-									}}
-									placement="topLeft"
-									overlayClassName="nav-dropdown-overlay settings-dropdown"
-									trigger={['click']}
-									onOpenChange={(open): void => setIsDropdownOpen(open)}
-								>
-									<div className={cx('nav-item', isSettingsPage && 'active')}>
-										<div className="nav-item-active-marker" />
-										<div className="nav-item-data" data-testid="settings-nav-item">
-											<div className="nav-item-icon">{userSettingsMenuItem.icon}</div>
+								<DropdownMenu onOpenChange={handleDropdownOpenChange}>
+									<DropdownMenuTrigger asChild>
+										<div className={cx('nav-item', isSettingsPage && 'active')}>
+											<div className="nav-item-active-marker" />
+											<div className="nav-item-data" data-testid="settings-nav-item">
+												<div className="nav-item-icon">{userSettingsMenuItem.icon}</div>
 
-											<div className="nav-item-label">{userSettingsMenuItem.label}</div>
+												<div className="nav-item-label">{userSettingsMenuItem.label}</div>
+											</div>
 										</div>
-									</div>
-								</Dropdown>
+									</DropdownMenuTrigger>
+									<DropdownMenuContent
+										side="top"
+										align="start"
+										className="nav-dropdown-overlay settings-dropdown"
+									>
+										{(userSettingsDropdownMenuItems ?? []).map((item, idx) => {
+											if (!item) {
+												return null;
+											}
+											if ('type' in item && item.type === 'divider') {
+												// eslint-disable-next-line react/no-array-index-key
+												return <DropdownMenuSeparator key={`settings-sep-${idx}`} />;
+											}
+											const settingsItem = item as {
+												key?: string | number;
+												label?: ReactNode;
+												icon?: ReactNode;
+												disabled?: boolean;
+											};
+											return (
+												<DropdownMenuItem
+													key={String(settingsItem.key)}
+													leftIcon={settingsItem.icon}
+													disabled={settingsItem.disabled}
+													onClick={(e): void =>
+														handleSettingsMenuItemClick({
+															key: String(settingsItem.key),
+															domEvent: e.nativeEvent,
+														} as unknown as SidebarItem)
+													}
+												>
+													{settingsItem.label}
+												</DropdownMenuItem>
+											);
+										})}
+									</DropdownMenuContent>
+								</DropdownMenu>
 							</div>
 						</div>
 					</div>
@@ -1247,14 +1355,14 @@ function SideNav({ isPinned }: { isPinned: boolean }): JSX.Element {
 				open={isReorderShortcutNavItemsModalOpen}
 				closable
 				onCancel={(): void => {
-					logEvent('Sidebar V2: Manage shortcuts dismissed', {});
+					void logEvent('Sidebar V2: Manage shortcuts dismissed', {});
 					hideReorderShortcutNavItemsModal();
 				}}
 				footer={[
 					<Button
 						key="cancel"
 						onClick={(): void => {
-							logEvent('Sidebar V2: Manage shortcuts dismissed', {});
+							void logEvent('Sidebar V2: Manage shortcuts dismissed', {});
 							hideReorderShortcutNavItemsModal();
 						}}
 						className="periscope-btn cancel-btn secondary-btn"

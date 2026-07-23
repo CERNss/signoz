@@ -1,18 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Button, Skeleton, Tag } from 'antd';
+import { Button, Skeleton } from 'antd';
+import { Badge } from '@signozhq/ui/badge';
 import logEvent from 'api/common/logEvent';
 import { getViewDetailsUsingViewKey } from 'components/ExplorerCard/utils';
 import ROUTES from 'constants/routes';
 import { useGetAllViews } from 'hooks/saveViews/useGetAllViews';
 import { useHandleExplorerTabChange } from 'hooks/useHandleExplorerTabChange';
-import {
-	ArrowRight,
-	ArrowUpRight,
-	BarChart,
-	CompassIcon,
-	DraftingCompass,
-} from 'lucide-react';
 import { SOURCEPAGE_VS_ROUTES } from 'pages/SaveView/constants';
 import Card from 'periscope/components/Card/Card';
 import { useAppContext } from 'providers/App/App';
@@ -21,9 +15,16 @@ import { DataSource } from 'types/common/queryBuilder';
 import { USER_ROLES } from 'types/roles';
 
 import floppyDiscUrl from '@/assets/Icons/floppy-disc.svg';
-import logsUrl from '@/assets/Icons/logs.svg';
 
 import { getItemIcon } from '../constants';
+import {
+	ArrowRight,
+	ArrowUpRight,
+	BarChart,
+	Compass,
+	DraftingCompass,
+	ScrollText,
+} from '@signozhq/icons';
 
 export default function SavedViews({
 	onUpdateChecklistDoneItem,
@@ -54,17 +55,20 @@ export default function SavedViews({
 		isError: metricsViewsError,
 	} = useGetAllViews(DataSource.METRICS);
 
-	const logsViews = useMemo(() => [...(logsViewsData?.data.data || [])], [
-		logsViewsData,
-	]);
+	const logsViews = useMemo(
+		() => [...(logsViewsData?.data.data || [])],
+		[logsViewsData],
+	);
 
-	const tracesViews = useMemo(() => [...(tracesViewsData?.data.data || [])], [
-		tracesViewsData,
-	]);
+	const tracesViews = useMemo(
+		() => [...(tracesViewsData?.data.data || [])],
+		[tracesViewsData],
+	);
 
-	const metricsViews = useMemo(() => [...(metricsViewsData?.data.data || [])], [
-		metricsViewsData,
-	]);
+	const metricsViews = useMemo(
+		() => [...(metricsViewsData?.data.data || [])],
+		[metricsViewsData],
+	);
 
 	useEffect(() => {
 		if (selectedEntity === 'logs') {
@@ -197,7 +201,7 @@ export default function SavedViews({
 								});
 
 								window.open(
-									'https://signoz.io/docs/product-features/saved-view/',
+									'https://signoz.io/docs/metrics-management/metrics-explorer/#saved-views-in-metrics-explorer',
 									'_blank',
 									'noopener noreferrer',
 								);
@@ -246,9 +250,9 @@ export default function SavedViews({
 								}
 
 								return (
-									<Tag color={tag} key={tag}>
+									<Badge color="sienna" key={tag}>
 										{tag}
-									</Tag>
+									</Badge>
 								);
 							})}
 						</div>
@@ -259,7 +263,7 @@ export default function SavedViews({
 							className="periscope-btn link"
 							onClick={(): void => handleRedirectQuery(view)}
 						>
-							<CompassIcon size={16} />
+							<Compass size={16} />
 						</Button>
 					</div>
 				))}
@@ -348,7 +352,7 @@ export default function SavedViews({
 									className={selectedEntity === 'logs' ? 'selected tab' : 'tab'}
 									onClick={(): void => handleTabChange('logs')}
 								>
-									<img src={logsUrl} alt="logs-icon" className="logs-icon" />
+									<ScrollText size={14} />
 									Logs
 								</Button>
 								<Button

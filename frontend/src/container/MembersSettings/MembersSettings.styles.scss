@@ -1,10 +1,17 @@
-.members-settings {
+@use '../../styles/scrollbar' as *;
+
+.members-settings-page {
 	display: flex;
 	flex-direction: column;
 	gap: var(--spacing-8);
 	padding: var(--padding-4) var(--padding-2) var(--padding-6) var(--padding-4);
 	height: 100%;
+	overflow-y: auto;
 
+	@include custom-scrollbar;
+}
+
+.members-settings {
 	&__header {
 		display: flex;
 		flex-direction: column;
@@ -14,7 +21,7 @@
 	&__title {
 		font-size: var(--label-large-500-font-size);
 		font-weight: var(--label-large-500-font-weight);
-		color: var(--text-base-white);
+		color: var(--l1-foreground);
 		letter-spacing: -0.09px;
 		line-height: var(--line-height-normal);
 		margin: 0;
@@ -26,7 +33,8 @@
 		color: var(--foreground);
 		letter-spacing: -0.07px;
 		line-height: var(--paragraph-base-400-line-height);
-		margin: 0;
+		margin-bottom: var(--spacing-8);
+		margin-top: 0;
 	}
 
 	&__controls {
@@ -45,7 +53,7 @@
 	display: flex;
 	align-items: center;
 	gap: var(--spacing-2);
-	border: 1px solid var(--border);
+	border: 1px solid var(--l1-border);
 	border-radius: 2px;
 	background-color: var(--l2-background);
 
@@ -63,7 +71,7 @@
 	.ant-dropdown-menu {
 		padding: var(--padding-3) 14px;
 		border-radius: 4px;
-		border: 1px solid var(--border);
+		border: 1px solid var(--l1-border);
 		background: var(--l2-background);
 		backdrop-filter: blur(20px);
 	}
@@ -98,23 +106,9 @@
 	height: 32px;
 	color: var(--l1-foreground);
 	background-color: var(--l2-background);
-	border-color: var(--border);
+	border-color: var(--l1-border);
 
 	&::placeholder {
 		color: var(--l3-foreground);
-	}
-}
-
-.lightMode {
-	.members-settings {
-		&__title {
-			color: var(--text-base-black);
-		}
-	}
-
-	.members-filter-option {
-		&:hover {
-			color: var(--bg-neutral-light-100);
-		}
 	}
 }

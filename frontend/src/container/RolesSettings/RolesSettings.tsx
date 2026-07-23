@@ -1,54 +1,68 @@
 import { useState } from 'react';
-import { Button } from '@signozhq/button';
+import { useHistory } from 'react-router-dom';
 import { Plus } from '@signozhq/icons';
-import { Input } from '@signozhq/input';
+import { Input } from '@signozhq/ui/input';
+import AuthZButton from 'lib/authz/components/AuthZButton/AuthZButton';
+import AuthZTooltip from 'lib/authz/components/AuthZTooltip/AuthZTooltip';
+import ROUTES from 'constants/routes';
+import {
+	RoleCreatePermission,
+	RoleListPermission,
+} from 'lib/authz/hooks/useAuthZ/permissions/role.permissions';
+import { useRolesFeatureGate } from 'hooks/useRolesFeatureGate';
 
-import { IS_ROLE_DETAILS_AND_CRUD_ENABLED } from './config';
-import CreateRoleModal from './RolesComponents/CreateRoleModal';
 import RolesListingTable from './RolesComponents/RolesListingTable';
 
-import './RolesSettings.styles.scss';
+import styles from './RolesSettings.module.scss';
 
 function RolesSettings(): JSX.Element {
 	const [searchQuery, setSearchQuery] = useState('');
-	const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+	const history = useHistory();
+	const { isRolesEnabled } = useRolesFeatureGate();
 
 	return (
-		<div className="roles-settings" data-testid="roles-settings">
-			<div className="roles-settings-header">
-				<h3 className="roles-settings-header-title">Roles</h3>
-				<p className="roles-settings-header-description">
-					Create and manage custom roles for your team.
+		<div data-testid="roles-settings">
+			<div className={styles.rolesSettingsHeader}>
+				<h3 className={styles.rolesSettingsHeaderTitle}>Roles</h3>
+				<p className={styles.rolesSettingsHeaderDescription}>
+					{isRolesEnabled
+						? 'Create and manage custom roles for your team. '
+						: 'The built-in roles of this instance.'}{' '}
+					<a
+						href="https://signoz.io/docs/manage/administrator-guide/iam/roles/"
+						target="_blank"
+						rel="noopener noreferrer"
+						className={styles.rolesSettingsHeaderLearnMore}
+					>
+						Learn more
+					</a>
 				</p>
 			</div>
-			<div className="roles-settings-content">
-				<div className="roles-settings-toolbar">
-					<div className="roles-search-wrapper">
+			<div className={styles.rolesSettingsContent}>
+				<div className={styles.rolesSettingsToolbar}>
+					<AuthZTooltip checks={[RoleListPermission]}>
 						<Input
 							type="search"
 							placeholder="Search for roles..."
 							value={searchQuery}
 							onChange={(e): void => setSearchQuery(e.target.value)}
 						/>
-					</div>
-					{IS_ROLE_DETAILS_AND_CRUD_ENABLED && (
-						<Button
+					</AuthZTooltip>
+					{isRolesEnabled && (
+						<AuthZButton
+							checks={[RoleCreatePermission]}
 							variant="solid"
 							color="primary"
-							className="role-settings-toolbar-button"
-							onClick={(): void => setIsCreateModalOpen(true)}
+							className={styles.roleSettingsToolbarButton}
+							onClick={(): void => history.push(ROUTES.ROLE_CREATE)}
 						>
 							<Plus size={14} />
 							Custom role
-						</Button>
+						</AuthZButton>
 					)}
 				</div>
 				<RolesListingTable searchQuery={searchQuery} />
 			</div>
-			<CreateRoleModal
-				isOpen={isCreateModalOpen}
-				onClose={(): void => setIsCreateModalOpen(false)}
-			/>
 		</div>
 	);
 }

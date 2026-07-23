@@ -1,6 +1,6 @@
-import { Button } from '@signozhq/button';
-import { DialogWrapper } from '@signozhq/dialog';
 import { Check, Copy } from '@signozhq/icons';
+import { Button } from '@signozhq/ui/button';
+import { DialogWrapper } from '@signozhq/ui/dialog';
 
 interface ResetLinkDialogProps {
 	open: boolean;
@@ -45,11 +45,10 @@ function ResetLinkDialog({
 						<span className="reset-link-dialog__link-text">{resetLink}</span>
 					</div>
 					<Button
-						variant="outlined"
+						variant="link"
 						color="secondary"
-						size="sm"
 						onClick={onCopy}
-						prefixIcon={hasCopied ? <Check size={12} /> : <Copy size={12} />}
+						prefix={hasCopied ? <Check size={12} /> : <Copy size={12} />}
 						className="reset-link-dialog__copy-btn"
 					>
 						{hasCopied ? 'Copied!' : 'Copy'}

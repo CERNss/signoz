@@ -2,7 +2,8 @@ import { useCallback } from 'react';
 // eslint-disable-next-line no-restricted-imports
 import { useDispatch, useSelector } from 'react-redux';
 import { useHistory, useLocation } from 'react-router-dom';
-import { Alert, Typography } from 'antd';
+import { Alert } from 'antd';
+import { Typography } from '@signozhq/ui/typography';
 import getLocalStorageApi from 'api/browser/localstorage/get';
 import setLocalStorageApi from 'api/browser/localstorage/set';
 import { LOCALSTORAGE } from 'constants/localStorage';
@@ -163,7 +164,7 @@ function BreakDown(): JSX.Element {
 								Meter metrics data is aggregated over 1 hour period. Please select time
 								range accordingly.&nbsp;
 								<a
-									href="https://signoz.io/docs/cost-meter/overview/#accessing-cost-meter"
+									href="https://signoz.io/docs/cost-meter/overview/#get-started"
 									rel="noopener noreferrer"
 									target="_blank"
 									style={{ textDecoration: 'underline' }}

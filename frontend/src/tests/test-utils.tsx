@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from 'react-query';
 import { Provider } from 'react-redux';
 import { MemoryRouter } from 'react-router-dom';
 import { render, RenderOptions, RenderResult } from '@testing-library/react';
+import { TooltipProvider } from '@signozhq/ui/tooltip';
 import { FeatureKeys } from 'constants/features';
 import { ORG_PREFERENCES } from 'constants/orgPreferences';
 import { ResourceProvider } from 'hooks/useResourceAttribute';
@@ -39,7 +40,7 @@ class ResizeObserverMock {
 	disconnect(): void {}
 }
 
-global.ResizeObserver = (ResizeObserverMock as unknown) as typeof ResizeObserver;
+global.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
 
 const queryClient = new QueryClient({
 	defaultOptions: {
@@ -105,6 +106,59 @@ jest.mock('react-i18next', () => ({
 	}),
 }));
 
+export const defaultFeatureFlags = [
+	{ name: FeatureKeys.SSO, active: true, usage: 0, usage_limit: -1, route: '' },
+	{
+		name: FeatureKeys.USE_SPAN_METRICS,
+		active: false,
+		usage: 0,
+		usage_limit: -1,
+		route: '',
+	},
+	{
+		name: FeatureKeys.GATEWAY,
+		active: true,
+		usage: 0,
+		usage_limit: -1,
+		route: '',
+	},
+	{
+		name: FeatureKeys.PREMIUM_SUPPORT,
+		active: true,
+		usage: 0,
+		usage_limit: -1,
+		route: '',
+	},
+	{
+		name: FeatureKeys.ANOMALY_DETECTION,
+		active: true,
+		usage: 0,
+		usage_limit: -1,
+		route: '',
+	},
+	{
+		name: FeatureKeys.ONBOARDING,
+		active: true,
+		usage: 0,
+		usage_limit: -1,
+		route: '',
+	},
+	{
+		name: FeatureKeys.CHAT_SUPPORT,
+		active: true,
+		usage: 0,
+		usage_limit: -1,
+		route: '',
+	},
+	{
+		name: FeatureKeys.USE_FINE_GRAINED_AUTHZ,
+		active: true,
+		usage: 0,
+		usage_limit: -1,
+		route: '',
+	},
+];
+
 export function getAppContextMock(
 	role: string,
 	appContextOverrides?: Partial<IAppContext>,
@@ -119,7 +173,7 @@ export function getAppContextMock(
 				status: '',
 				updated_at: '0',
 			},
-			state: LicenseState.ACTIVE,
+			state: LicenseState.ACTIVATED,
 			status: LicenseStatus.VALID,
 			platform: LicensePlatform.CLOUD,
 			created_at: '0',
@@ -168,59 +222,12 @@ export function getAppContextMock(
 		hasEditPermission: role === USER_ROLES.ADMIN || role === USER_ROLES.EDITOR,
 		isFetchingUser: false,
 		userFetchError: null,
-		featureFlags: [
-			{
-				name: FeatureKeys.SSO,
-				active: true,
-				usage: 0,
-				usage_limit: -1,
-				route: '',
-			},
-			{
-				name: FeatureKeys.USE_SPAN_METRICS,
-				active: false,
-				usage: 0,
-				usage_limit: -1,
-				route: '',
-			},
-			{
-				name: FeatureKeys.GATEWAY,
-				active: true,
-				usage: 0,
-				usage_limit: -1,
-				route: '',
-			},
-			{
-				name: FeatureKeys.PREMIUM_SUPPORT,
-				active: true,
-				usage: 0,
-				usage_limit: -1,
-				route: '',
-			},
-			{
-				name: FeatureKeys.ANOMALY_DETECTION,
-				active: true,
-				usage: 0,
-				usage_limit: -1,
-				route: '',
-			},
-			{
-				name: FeatureKeys.ONBOARDING,
-				active: true,
-				usage: 0,
-				usage_limit: -1,
-				route: '',
-			},
-			{
-				name: FeatureKeys.CHAT_SUPPORT,
-				active: true,
-				usage: 0,
-				usage_limit: -1,
-				route: '',
-			},
-		],
+		featureFlags: defaultFeatureFlags,
 		isFetchingFeatureFlags: false,
 		featureFlagsFetchError: null,
+		hostsData: null,
+		isFetchingHosts: false,
+		hostsFetchError: null,
 		orgPreferences: [
 			{
 				name: ORG_PREFERENCES.ORG_ONBOARDING,
@@ -237,6 +244,7 @@ export function getAppContextMock(
 		isFetchingOrgPreferences: false,
 		orgPreferencesFetchError: null,
 		isLoggedIn: true,
+		isPreflightLoading: false,
 		showChangelogModal: false,
 		updateUser: jest.fn(),
 		updateOrg: jest.fn(),
@@ -282,20 +290,22 @@ export function AllTheProviders({
 		<QueryBuilderProvider>{children}</QueryBuilderProvider>
 	);
 
+	const appContextValue = getAppContextMock(roleValue, appContextOverridesValue);
+
 	return (
 		<MemoryRouter initialEntries={[initialRouteValue]}>
 			<NuqsAdapter>
 				<QueryClientProvider client={queryClient}>
 					<Provider store={mockStored(roleValue)}>
-						<AppContext.Provider
-							value={getAppContextMock(roleValue, appContextOverridesValue)}
-						>
+						<AppContext.Provider value={appContextValue}>
 							<ResourceProvider>
 								<ErrorModalProvider>
 									<TimezoneProvider>
-										<PreferenceContextProvider>
-											{queryBuilderContent}
-										</PreferenceContextProvider>
+										<TooltipProvider>
+											<PreferenceContextProvider>
+												{queryBuilderContent}
+											</PreferenceContextProvider>
+										</TooltipProvider>
 									</TimezoneProvider>
 								</ErrorModalProvider>
 							</ResourceProvider>

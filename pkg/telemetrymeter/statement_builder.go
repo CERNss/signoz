@@ -12,6 +12,7 @@ import (
 	"github.com/SigNoz/signoz/pkg/types/metrictypes"
 	qbtypes "github.com/SigNoz/signoz/pkg/types/querybuildertypes/querybuildertypesv5"
 	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
+	"github.com/SigNoz/signoz/pkg/valuer"
 	"github.com/huandu/go-sqlbuilder"
 )
 
@@ -45,6 +46,7 @@ func NewMeterQueryStatementBuilder(
 
 func (b *meterQueryStatementBuilder) Build(
 	ctx context.Context,
+	orgID valuer.UUID,
 	start uint64,
 	end uint64,
 	_ qbtypes.RequestType,
@@ -52,18 +54,19 @@ func (b *meterQueryStatementBuilder) Build(
 	variables map[string]qbtypes.VariableItem,
 ) (*qbtypes.Statement, error) {
 	keySelectors := telemetrymetrics.GetKeySelectors(query)
-	keys, _, err := b.metadataStore.GetKeysMulti(ctx, keySelectors)
+	keys, _, err := b.metadataStore.GetKeysMulti(ctx, orgID, keySelectors)
 	if err != nil {
 		return nil, err
 	}
 
 	start, end = querybuilder.AdjustedMetricTimeRange(start, end, uint64(query.StepInterval.Seconds()), query)
 
-	return b.buildPipelineStatement(ctx, start, end, query, keys, variables)
+	return b.buildPipelineStatement(ctx, orgID, start, end, query, keys, variables)
 }
 
 func (b *meterQueryStatementBuilder) buildPipelineStatement(
 	ctx context.Context,
+	orgID valuer.UUID,
 	start, end uint64,
 	query qbtypes.QueryBuilderQuery[qbtypes.MetricAggregation],
 	keys map[string][]*telemetrytypes.TelemetryFieldKey,
@@ -76,7 +79,7 @@ func (b *meterQueryStatementBuilder) buildPipelineStatement(
 
 	if qbtypes.CanShortCircuitDelta(query.Aggregations[0]) {
 		// spatial_aggregation_cte directly for certain delta queries
-		if frag, args, err := b.buildTemporalAggDeltaFastPath(ctx, start, end, query, keys, variables); err != nil {
+		if frag, args, err := b.buildTemporalAggDeltaFastPath(ctx, orgID, start, end, query, keys, variables); err != nil {
 			return nil, err
 		} else if frag != "" {
 			cteFragments = append(cteFragments, frag)
@@ -84,7 +87,7 @@ func (b *meterQueryStatementBuilder) buildPipelineStatement(
 		}
 	} else {
 		// temporal_aggregation_cte
-		if frag, args, err := b.buildTemporalAggregationCTE(ctx, start, end, query, keys, variables); err != nil {
+		if frag, args, err := b.buildTemporalAggregationCTE(ctx, orgID, start, end, query, keys, variables); err != nil {
 			return nil, err
 		} else if frag != "" {
 			cteFragments = append(cteFragments, frag)
@@ -106,12 +109,13 @@ func (b *meterQueryStatementBuilder) buildPipelineStatement(
 
 func (b *meterQueryStatementBuilder) buildTemporalAggDeltaFastPath(
 	ctx context.Context,
+	orgID valuer.UUID,
 	start, end uint64,
 	query qbtypes.QueryBuilderQuery[qbtypes.MetricAggregation],
 	keys map[string][]*telemetrytypes.TelemetryFieldKey,
 	variables map[string]qbtypes.VariableItem,
 ) (string, []any, error) {
-	var filterWhere *querybuilder.PreparedWhereClause
+	var filterWhere querybuilder.PreparedWhereClause
 	var err error
 	stepSec := int64(query.StepInterval.Seconds())
 
@@ -122,7 +126,7 @@ func (b *meterQueryStatementBuilder) buildTemporalAggDeltaFastPath(
 		stepSec,
 	))
 	for _, g := range query.GroupBy {
-		col, err := b.fm.ColumnExpressionFor(ctx, start, end, &g.TelemetryFieldKey, keys)
+		col, err := b.fm.ColumnExpressionFor(ctx, orgID, start, end, &g.TelemetryFieldKey, telemetrytypes.FieldDataTypeString, keys)
 		if err != nil {
 			return "", nil, err
 		}
@@ -148,6 +152,7 @@ func (b *meterQueryStatementBuilder) buildTemporalAggDeltaFastPath(
 	if query.Filter != nil && query.Filter.Expression != "" {
 		filterWhere, err = querybuilder.PrepareWhereClause(query.Filter.Expression, querybuilder.FilterExprVisitorOpts{
 			Context:          ctx,
+			OrgID:            orgID,
 			Logger:           b.logger,
 			FieldMapper:      b.fm,
 			ConditionBuilder: b.cb,
@@ -161,7 +166,7 @@ func (b *meterQueryStatementBuilder) buildTemporalAggDeltaFastPath(
 			return "", nil, err
 		}
 	}
-	if filterWhere != nil {
+	if !filterWhere.IsEmpty() {
 		sb.AddWhereClause(filterWhere.WhereClause)
 	}
 
@@ -177,25 +182,27 @@ func (b *meterQueryStatementBuilder) buildTemporalAggDeltaFastPath(
 
 func (b *meterQueryStatementBuilder) buildTemporalAggregationCTE(
 	ctx context.Context,
+	orgID valuer.UUID,
 	start, end uint64,
 	query qbtypes.QueryBuilderQuery[qbtypes.MetricAggregation],
 	keys map[string][]*telemetrytypes.TelemetryFieldKey,
 	variables map[string]qbtypes.VariableItem,
 ) (string, []any, error) {
 	if query.Aggregations[0].Temporality == metrictypes.Delta {
-		return b.buildTemporalAggDelta(ctx, start, end, query, keys, variables)
+		return b.buildTemporalAggDelta(ctx, orgID, start, end, query, keys, variables)
 	}
-	return b.buildTemporalAggCumulativeOrUnspecified(ctx, start, end, query, keys, variables)
+	return b.buildTemporalAggCumulativeOrUnspecified(ctx, orgID, start, end, query, keys, variables)
 }
 
 func (b *meterQueryStatementBuilder) buildTemporalAggDelta(
 	ctx context.Context,
+	orgID valuer.UUID,
 	start, end uint64,
 	query qbtypes.QueryBuilderQuery[qbtypes.MetricAggregation],
 	keys map[string][]*telemetrytypes.TelemetryFieldKey,
 	variables map[string]qbtypes.VariableItem,
 ) (string, []any, error) {
-	var filterWhere *querybuilder.PreparedWhereClause
+	var filterWhere querybuilder.PreparedWhereClause
 	var err error
 
 	stepSec := int64(query.StepInterval.Seconds())
@@ -208,7 +215,7 @@ func (b *meterQueryStatementBuilder) buildTemporalAggDelta(
 	))
 
 	for _, g := range query.GroupBy {
-		col, err := b.fm.ColumnExpressionFor(ctx, start, end, &g.TelemetryFieldKey, keys)
+		col, err := b.fm.ColumnExpressionFor(ctx, orgID, start, end, &g.TelemetryFieldKey, telemetrytypes.FieldDataTypeString, keys)
 		if err != nil {
 			return "", nil, err
 		}
@@ -237,6 +244,7 @@ func (b *meterQueryStatementBuilder) buildTemporalAggDelta(
 	if query.Filter != nil && query.Filter.Expression != "" {
 		filterWhere, err = querybuilder.PrepareWhereClause(query.Filter.Expression, querybuilder.FilterExprVisitorOpts{
 			Context:          ctx,
+			OrgID:            orgID,
 			Logger:           b.logger,
 			FieldMapper:      b.fm,
 			ConditionBuilder: b.cb,
@@ -250,7 +258,7 @@ func (b *meterQueryStatementBuilder) buildTemporalAggDelta(
 			return "", nil, err
 		}
 	}
-	if filterWhere != nil {
+	if !filterWhere.IsEmpty() {
 		sb.AddWhereClause(filterWhere.WhereClause)
 	}
 
@@ -268,12 +276,13 @@ func (b *meterQueryStatementBuilder) buildTemporalAggDelta(
 
 func (b *meterQueryStatementBuilder) buildTemporalAggCumulativeOrUnspecified(
 	ctx context.Context,
+	orgID valuer.UUID,
 	start, end uint64,
 	query qbtypes.QueryBuilderQuery[qbtypes.MetricAggregation],
 	keys map[string][]*telemetrytypes.TelemetryFieldKey,
 	variables map[string]qbtypes.VariableItem,
 ) (string, []any, error) {
-	var filterWhere *querybuilder.PreparedWhereClause
+	var filterWhere querybuilder.PreparedWhereClause
 	var err error
 	stepSec := int64(query.StepInterval.Seconds())
 
@@ -284,7 +293,7 @@ func (b *meterQueryStatementBuilder) buildTemporalAggCumulativeOrUnspecified(
 		stepSec,
 	))
 	for _, g := range query.GroupBy {
-		col, err := b.fm.ColumnExpressionFor(ctx, start, end, &g.TelemetryFieldKey, keys)
+		col, err := b.fm.ColumnExpressionFor(ctx, orgID, start, end, &g.TelemetryFieldKey, telemetrytypes.FieldDataTypeString, keys)
 		if err != nil {
 			return "", nil, err
 		}
@@ -307,6 +316,7 @@ func (b *meterQueryStatementBuilder) buildTemporalAggCumulativeOrUnspecified(
 	if query.Filter != nil && query.Filter.Expression != "" {
 		filterWhere, err = querybuilder.PrepareWhereClause(query.Filter.Expression, querybuilder.FilterExprVisitorOpts{
 			Context:          ctx,
+			OrgID:            orgID,
 			Logger:           b.logger,
 			FieldMapper:      b.fm,
 			ConditionBuilder: b.cb,
@@ -320,7 +330,7 @@ func (b *meterQueryStatementBuilder) buildTemporalAggCumulativeOrUnspecified(
 			return "", nil, err
 		}
 	}
-	if filterWhere != nil {
+	if !filterWhere.IsEmpty() {
 		baseSb.AddWhereClause(filterWhere.WhereClause)
 	}
 

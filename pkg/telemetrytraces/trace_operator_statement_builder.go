@@ -6,10 +6,12 @@ import (
 
 	"github.com/SigNoz/signoz/pkg/errors"
 	"github.com/SigNoz/signoz/pkg/factory"
+	"github.com/SigNoz/signoz/pkg/flagger"
 	"github.com/SigNoz/signoz/pkg/querybuilder"
 	"github.com/SigNoz/signoz/pkg/telemetryresourcefilter"
 	qbtypes "github.com/SigNoz/signoz/pkg/types/querybuildertypes/querybuildertypesv5"
 	"github.com/SigNoz/signoz/pkg/types/telemetrytypes"
+	"github.com/SigNoz/signoz/pkg/valuer"
 )
 
 type traceOperatorStatementBuilder struct {
@@ -31,6 +33,7 @@ func NewTraceOperatorStatementBuilder(
 	conditionBuilder qbtypes.ConditionBuilder,
 	traceStmtBuilder qbtypes.StatementBuilder[qbtypes.TraceAggregation],
 	aggExprRewriter qbtypes.AggExprRewriter,
+	flagger flagger.Flagger,
 ) *traceOperatorStatementBuilder {
 	tracesSettings := factory.NewScopedProviderSettings(settings, "github.com/SigNoz/signoz/pkg/telemetrytraces")
 
@@ -42,7 +45,7 @@ func NewTraceOperatorStatementBuilder(
 		telemetrytypes.SourceUnspecified,
 		metadataStore,
 		nil,
-		nil,
+		flagger,
 	)
 
 	return &traceOperatorStatementBuilder{
@@ -59,6 +62,7 @@ func NewTraceOperatorStatementBuilder(
 // Build builds a SQL query based on the given parameters.
 func (b *traceOperatorStatementBuilder) Build(
 	ctx context.Context,
+	orgID valuer.UUID,
 	start uint64,
 	end uint64,
 	requestType qbtypes.RequestType,
@@ -89,6 +93,7 @@ func (b *traceOperatorStatementBuilder) Build(
 	builder := &traceOperatorCTEBuilder{
 		start:          start,
 		end:            end,
+		orgID:          orgID,
 		operator:       &query,
 		stmtBuilder:    b,
 		queries:        make(map[string]*qbtypes.QueryBuilderQuery[qbtypes.TraceAggregation]),

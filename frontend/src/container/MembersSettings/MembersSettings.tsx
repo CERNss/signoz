@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useHistory } from 'react-router-dom';
-import { Button } from '@signozhq/button';
 import { Check, ChevronDown, Plus } from '@signozhq/icons';
-import { Input } from '@signozhq/input';
-import type { MenuProps } from 'antd';
-import { Dropdown } from 'antd';
+import { Button } from '@signozhq/ui/button';
+import { DropdownMenuSimple, type MenuItem } from '@signozhq/ui/dropdown-menu';
+import { Input } from '@signozhq/ui/input';
 import { useListUsers } from 'api/generated/services/users';
 import EditMemberDrawer from 'components/EditMemberDrawer/EditMemberDrawer';
-import InviteMembersModal from 'components/InviteMembersModal/InviteMembersModal';
+import InviteMembersModal from 'container/MembersSettings/components/InviteMembersModal/InviteMembersModal';
 import MembersTable, { MemberRow } from 'components/MembersTable/MembersTable';
 import useUrlQuery from 'hooks/useUrlQuery';
+import { parseAsBoolean, useQueryState } from 'nuqs';
 import { toISOString } from 'utils/app';
 
 import { FilterMode, MemberStatus, toMemberStatus } from './utils';
@@ -21,14 +21,16 @@ const PAGE_SIZE = 20;
 function MembersSettings(): JSX.Element {
 	const history = useHistory();
 	const urlQuery = useUrlQuery();
-
 	const pageParam = parseInt(urlQuery.get('page') ?? '1', 10);
 	const currentPage = Number.isNaN(pageParam) || pageParam < 1 ? 1 : pageParam;
 
 	// TODO(nuqs): Replace with nuqs once the nuqs setup and integration is done - for search
 	const [searchQuery, setSearchQuery] = useState('');
 	const [filterMode, setFilterMode] = useState<FilterMode>(FilterMode.All);
-	const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+	const [isInviteModalOpen, setIsInviteModalOpen] = useQueryState(
+		'invite',
+		parseAsBoolean.withDefault(false),
+	);
 	const [selectedMember, setSelectedMember] = useState<MemberRow | null>(null);
 
 	const { data: usersData, isLoading, refetch: refetchUsers } = useListUsers();
@@ -96,7 +98,7 @@ function MembersSettings(): JSX.Element {
 	).length;
 	const totalCount = allMembers.length;
 
-	const filterMenuItems: MenuProps['items'] = [
+	const filterMenuItems: MenuItem[] = [
 		{
 			key: FilterMode.All,
 			label: (
@@ -142,11 +144,11 @@ function MembersSettings(): JSX.Element {
 		filterMode === FilterMode.All
 			? `All members ⎯ ${totalCount}`
 			: filterMode === FilterMode.Invited
-			? `Pending invites ⎯ ${pendingCount}`
-			: `Deleted ⎯ ${deletedCount}`;
+				? `Pending invites ⎯ ${pendingCount}`
+				: `Deleted ⎯ ${deletedCount}`;
 
 	const handleInviteComplete = useCallback((): void => {
-		refetchUsers();
+		void refetchUsers();
 	}, [refetchUsers]);
 
 	const handleRowClick = useCallback((member: MemberRow): void => {
@@ -158,11 +160,11 @@ function MembersSettings(): JSX.Element {
 	}, []);
 
 	const handleMemberEditComplete = useCallback((): void => {
-		refetchUsers();
+		void refetchUsers();
 	}, [refetchUsers]);
 
 	return (
-		<>
+		<div className="members-settings-page">
 			<div className="members-settings">
 				<div className="members-settings__header">
 					<h1 className="members-settings__title">Members</h1>
@@ -172,21 +174,19 @@ function MembersSettings(): JSX.Element {
 				</div>
 
 				<div className="members-settings__controls">
-					<Dropdown
+					<DropdownMenuSimple
 						menu={{ items: filterMenuItems }}
-						trigger={['click']}
-						overlayClassName="members-filter-dropdown"
+						className="members-filter-dropdown"
 					>
 						<Button
 							variant="solid"
-							size="sm"
 							color="secondary"
 							className="members-filter-trigger"
 						>
 							<span>{filterLabel}</span>
 							<ChevronDown size={12} className="members-filter-trigger__chevron" />
 						</Button>
-					</Dropdown>
+					</DropdownMenuSimple>
 
 					<div className="members-settings__search">
 						<Input
@@ -198,16 +198,14 @@ function MembersSettings(): JSX.Element {
 								setPage(1);
 							}}
 							className="members-search-input"
-							color="secondary"
 							name="members-search"
 						/>
 					</div>
 
 					<Button
 						variant="solid"
-						size="sm"
 						color="primary"
-						onClick={(): void => setIsInviteModalOpen(true)}
+						onClick={(): void => void setIsInviteModalOpen(true)}
 					>
 						<Plus size={12} />
 						Invite member
@@ -227,7 +225,7 @@ function MembersSettings(): JSX.Element {
 
 			<InviteMembersModal
 				open={isInviteModalOpen}
-				onClose={(): void => setIsInviteModalOpen(false)}
+				onClose={(): void => void setIsInviteModalOpen(null)}
 				onComplete={handleInviteComplete}
 			/>
 
@@ -237,7 +235,7 @@ function MembersSettings(): JSX.Element {
 				onClose={handleDrawerClose}
 				onComplete={handleMemberEditComplete}
 			/>
-		</>
+		</div>
 	);
 }
 

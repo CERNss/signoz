@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
-import { WarningFilled } from '@ant-design/icons';
+import { SolidAlertTriangle } from '@signozhq/icons';
 import { Select, Tooltip } from 'antd';
 import type { DefaultOptionType } from 'antd/es/select';
-import classNames from 'classnames';
+import cx from 'classnames';
 
 import { UniversalYAxisUnitMappings } from './constants';
 import { UniversalYAxisUnit, YAxisUnitSelectorProps } from './types';
@@ -34,9 +34,8 @@ function YAxisUnitSelector({
 		const initialUniversalUnit = mapMetricUnitToUniversalUnit(initialValue);
 		const currentUniversalUnit = mapMetricUnitToUniversalUnit(value);
 		if (initialUniversalUnit !== currentUniversalUnit) {
-			const initialUniversalUnitName = getUniversalNameFromMetricUnit(
-				initialValue,
-			);
+			const initialUniversalUnitName =
+				getUniversalNameFromMetricUnit(initialValue);
 			const currentUniversalUnitName = getUniversalNameFromMetricUnit(value);
 			return `Unit mismatch. The metric was sent with unit ${initialUniversalUnitName}, but ${currentUniversalUnitName} is selected.`;
 		}
@@ -73,9 +72,7 @@ function YAxisUnitSelector({
 	}, [categoriesOverride, source]);
 
 	return (
-		<div
-			className={classNames('y-axis-unit-selector-component', containerClassName)}
-		>
+		<div className={cx('y-axis-unit-selector-component', containerClassName)}>
 			<Select
 				showSearch
 				value={universalUnit}
@@ -85,12 +82,17 @@ function YAxisUnitSelector({
 				loading={loading}
 				suffixIcon={
 					incompatibleUnitMessage ? (
-						<Tooltip title={incompatibleUnitMessage}>
-							<WarningFilled />
+						<Tooltip
+							title={incompatibleUnitMessage}
+							overlayClassName="y-axis-unit-warning-tooltip"
+						>
+							<span className="y-axis-unit-warning" role="img" aria-label="warning">
+								<SolidAlertTriangle size="md" />
+							</span>
 						</Tooltip>
 					) : undefined
 				}
-				className={classNames({
+				className={cx({
 					'warning-state': incompatibleUnitMessage,
 				})}
 				data-testid={dataTestId}

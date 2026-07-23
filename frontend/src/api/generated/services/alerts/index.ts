@@ -1,9 +1,10 @@
 /**
  * ! Do not edit manually
  * * The file has been auto-generated using Orval for SigNoz
- * * regenerate with 'yarn generate:api'
+ * * regenerate with 'pnpm generate:api'
  * SigNoz
  */
+import { useQuery } from 'react-query';
 import type {
 	InvalidateOptions,
 	QueryClient,
@@ -12,11 +13,11 @@ import type {
 	UseQueryOptions,
 	UseQueryResult,
 } from 'react-query';
-import { useQuery } from 'react-query';
 
-import type { ErrorType } from '../../../generatedAPIInstance';
-import { GeneratedAPIInstance } from '../../../generatedAPIInstance';
 import type { GetAlerts200, RenderErrorResponseDTO } from '../sigNoz.schemas';
+
+import { GeneratedAPIInstance } from '../../../generatedAPIInstance';
+import type { ErrorType } from '../../../generatedAPIInstance';
 
 /**
  * This endpoint returns alerts for the organization
@@ -36,7 +37,7 @@ export const getGetAlertsQueryKey = () => {
 
 export const getGetAlertsQueryOptions = <
 	TData = Awaited<ReturnType<typeof getAlerts>>,
-	TError = ErrorType<RenderErrorResponseDTO>
+	TError = ErrorType<RenderErrorResponseDTO>,
 >(options?: {
 	query?: UseQueryOptions<Awaited<ReturnType<typeof getAlerts>>, TError, TData>;
 }) => {
@@ -66,7 +67,7 @@ export type GetAlertsQueryError = ErrorType<RenderErrorResponseDTO>;
 
 export function useGetAlerts<
 	TData = Awaited<ReturnType<typeof getAlerts>>,
-	TError = ErrorType<RenderErrorResponseDTO>
+	TError = ErrorType<RenderErrorResponseDTO>,
 >(options?: {
 	query?: UseQueryOptions<Awaited<ReturnType<typeof getAlerts>>, TError, TData>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
@@ -76,9 +77,7 @@ export function useGetAlerts<
 		queryKey: QueryKey;
 	};
 
-	query.queryKey = queryOptions.queryKey;
-
-	return query;
+	return { ...query, queryKey: queryOptions.queryKey };
 }
 
 /**

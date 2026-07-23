@@ -71,7 +71,7 @@ export const useLogsData = ({
 	}, [logs.length, listQuery]);
 
 	const orderByTimestamp: OrderByPayload | null = useMemo(() => {
-		const timestampOrderBy = listQuery?.orderBy.find(
+		const timestampOrderBy = listQuery?.orderBy?.find(
 			(item) => item.columnName === 'timestamp',
 		);
 
@@ -123,7 +123,7 @@ export const useLogsData = ({
 							...(listQuery || initialQueryBuilderFormValues),
 							...paginateData,
 						},
-				  ];
+					];
 
 		const data: Query = {
 			...query,

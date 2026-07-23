@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/alertmanager/config"
 
 	"github.com/SigNoz/signoz/pkg/errors"
+	"github.com/SigNoz/signoz/pkg/types"
 	"github.com/SigNoz/signoz/pkg/types/alertmanagertypes"
 	qbtypes "github.com/SigNoz/signoz/pkg/types/querybuildertypes/querybuildertypesv5"
 	"github.com/SigNoz/signoz/pkg/valuer"
@@ -25,6 +26,16 @@ const (
 	AlertTypeExceptions AlertType = "EXCEPTIONS_BASED_ALERT"
 )
 
+// Enum implements jsonschema.Enum; returns the acceptable values for AlertType.
+func (AlertType) Enum() []any {
+	return []any{
+		AlertTypeMetric,
+		AlertTypeTraces,
+		AlertTypeLogs,
+		AlertTypeExceptions,
+	}
+}
+
 const (
 	DefaultSchemaVersion  = "v1"
 	SchemaVersionV2Alpha1 = "v2alpha1"
@@ -38,14 +49,14 @@ const (
 
 // PostableRule is used to create alerting rule from HTTP api.
 type PostableRule struct {
-	AlertName   string              `json:"alert"`
-	AlertType   AlertType           `json:"alertType,omitempty"`
+	AlertName   string              `json:"alert" required:"true"`
+	AlertType   AlertType           `json:"alertType" required:"true"`
 	Description string              `json:"description,omitempty"`
-	RuleType    RuleType            `json:"ruleType,omitzero"`
+	RuleType    RuleType            `json:"ruleType" required:"true"`
 	EvalWindow  valuer.TextDuration `json:"evalWindow,omitzero"`
 	Frequency   valuer.TextDuration `json:"frequency,omitzero"`
 
-	RuleCondition *RuleCondition    `json:"condition,omitempty"`
+	RuleCondition *RuleCondition    `json:"condition" required:"true"`
 	Labels        map[string]string `json:"labels,omitempty"`
 	Annotations   map[string]string `json:"annotations,omitempty"`
 
@@ -56,18 +67,18 @@ type PostableRule struct {
 
 	PreferredChannels []string `json:"preferredChannels,omitempty"`
 
-	Version string `json:"version,omitempty"`
+	Version string `json:"version"`
 
-	Evaluation    *EvaluationEnvelope `yaml:"evaluation,omitempty" json:"evaluation,omitempty"`
+	Evaluation    *EvaluationEnvelope `json:"evaluation,omitempty"`
 	SchemaVersion string              `json:"schemaVersion,omitempty"`
 
 	NotificationSettings *NotificationSettings `json:"notificationSettings,omitempty"`
 }
 
 type NotificationSettings struct {
-	GroupBy   []string `json:"groupBy,omitempty"`
-	Renotify  Renotify `json:"renotify,omitzero"`
-	UsePolicy bool     `json:"usePolicy,omitempty"`
+	GroupBy   []string  `json:"groupBy,omitzero"`
+	Renotify  *Renotify `json:"renotify,omitempty"`
+	UsePolicy bool      `json:"usePolicy"`
 	// NewGroupEvalDelay is the grace period for new series to be excluded from alerts evaluation
 	NewGroupEvalDelay valuer.TextDuration `json:"newGroupEvalDelay,omitzero"`
 }
@@ -75,13 +86,13 @@ type NotificationSettings struct {
 type Renotify struct {
 	Enabled          bool                `json:"enabled"`
 	ReNotifyInterval valuer.TextDuration `json:"interval,omitzero"`
-	AlertStates      []AlertState        `json:"alertStates,omitempty"`
+	AlertStates      []AlertState        `json:"alertStates,omitzero"`
 }
 
 func (ns *NotificationSettings) GetAlertManagerNotificationConfig() alertmanagertypes.NotificationConfig {
 	var renotifyInterval time.Duration
 	var noDataRenotifyInterval time.Duration
-	if ns.Renotify.Enabled {
+	if ns.Renotify != nil && ns.Renotify.Enabled {
 		if slices.Contains(ns.Renotify.AlertStates, StateNoData) {
 			noDataRenotifyInterval = ns.Renotify.ReNotifyInterval.Duration()
 		}
@@ -193,10 +204,12 @@ func (ns *NotificationSettings) UnmarshalJSON(data []byte) error {
 	}
 
 	// Validate states after unmarshaling
-	for _, state := range ns.Renotify.AlertStates {
-		if state != StateFiring && state != StateNoData {
-			return errors.NewInvalidInputf(errors.CodeInvalidInput, "invalid alert state: %s", state)
+	if ns.Renotify != nil {
+		for _, state := range ns.Renotify.AlertStates {
+			if state != StateFiring && state != StateNoData {
+				return errors.NewInvalidInputf(errors.CodeInvalidInput, "invalid alert state: %s", state)
 
+			}
 		}
 	}
 	return nil
@@ -207,6 +220,11 @@ func (ns *NotificationSettings) UnmarshalJSON(data []byte) error {
 func (r *PostableRule) processRuleDefaults() {
 	if r.SchemaVersion == "" {
 		r.SchemaVersion = DefaultSchemaVersion
+	}
+
+	// TODO(srikanthccv): remove as this is now a legacy field
+	if r.Version == "" {
+		r.Version = "v5"
 	}
 
 	// v2alpha1 uses the Evaluation envelope for window/frequency;
@@ -260,7 +278,7 @@ func (r *PostableRule) processRuleDefaults() {
 			r.RuleCondition.Thresholds = &thresholdData
 			r.Evaluation = &EvaluationEnvelope{RollingEvaluation, RollingWindow{EvalWindow: r.EvalWindow, Frequency: r.Frequency}}
 			r.NotificationSettings = &NotificationSettings{
-				Renotify: Renotify{
+				Renotify: &Renotify{
 					Enabled:          true,
 					ReNotifyInterval: valuer.MustParseTextDuration("4h"),
 					AlertStates:      []AlertState{StateFiring},
@@ -327,6 +345,7 @@ func isValidLabelValue(v string) bool {
 // validate runs during UnmarshalJSON (read + write path).
 // Preserves the original pre-existing checks only so that stored rules
 // continue to load without errors.
+// TODO(srikanthccv): remove this once v1 is deprecated and removed.
 func (r *PostableRule) validate() error {
 	var errs []error
 
@@ -355,9 +374,13 @@ func (r *PostableRule) validate() error {
 
 	errs = append(errs, testTemplateParsing(r)...)
 
-	joined := errors.Join(errs...)
-	if joined != nil {
-		return errors.WrapInvalidInputf(joined, errors.CodeInvalidInput, "validation failed")
+	if len(errs) > 0 {
+		messages := make([]string, len(errs))
+		for i, e := range errs {
+			messages[i] = e.Error()
+		}
+		return errors.NewInvalidInputf(errors.CodeInvalidInput, "alert rule definition is not valid").
+			WithAdditional(messages...)
 	}
 	return nil
 }
@@ -455,9 +478,13 @@ func (r *PostableRule) Validate() error {
 
 	errs = append(errs, testTemplateParsing(r)...)
 
-	joined := errors.Join(errs...)
-	if joined != nil {
-		return errors.WrapInvalidInputf(joined, errors.CodeInvalidInput, "validation failed")
+	if len(errs) > 0 {
+		messages := make([]string, len(errs))
+		for i, e := range errs {
+			messages[i] = e.Error()
+		}
+		return errors.NewInvalidInputf(errors.CodeInvalidInput, "alert rule is not valid").
+			WithAdditional(messages...)
 	}
 	return nil
 }
@@ -537,7 +564,7 @@ func (r *PostableRule) validateV2Alpha1() []error {
 		errs = append(errs, errors.NewInvalidInputf(errors.CodeInvalidInput,
 			"notificationSettings: field is required for schemaVersion %q", SchemaVersionV2Alpha1))
 	} else {
-		if r.NotificationSettings.Renotify.Enabled && !r.NotificationSettings.Renotify.ReNotifyInterval.IsPositive() {
+		if r.NotificationSettings.Renotify != nil && r.NotificationSettings.Renotify.Enabled && !r.NotificationSettings.Renotify.ReNotifyInterval.IsPositive() {
 			errs = append(errs, errors.NewInvalidInputf(errors.CodeInvalidInput,
 				"notificationSettings.renotify.interval: must be a positive duration when renotify is enabled"))
 		}
@@ -586,19 +613,24 @@ func testTemplateParsing(rl *PostableRule) (errs []error) {
 }
 
 // GettableRules has info for all stored rules.
+type GettableTestRule struct {
+	AlertCount int    `json:"alertCount"`
+	Message    string `json:"message"`
+}
+
 type GettableRules struct {
 	Rules []*GettableRule `json:"rules"`
 }
 
 // GettableRule has info for an alerting rules.
 type GettableRule struct {
-	Id    string     `json:"id"`
-	State AlertState `json:"state"`
+	Id    string     `json:"id" required:"true"`
+	State AlertState `json:"state" required:"true"`
 	PostableRule
-	CreatedAt *time.Time `json:"createAt"`
-	CreatedBy *string    `json:"createBy"`
-	UpdatedAt *time.Time `json:"updateAt"`
-	UpdatedBy *string    `json:"updateBy"`
+	CreatedAt time.Time `json:"createAt" required:"true"`
+	CreatedBy *string   `json:"createBy" nullable:"true"`
+	UpdatedAt time.Time `json:"updateAt" required:"true"`
+	UpdatedBy *string   `json:"updateBy" nullable:"true"`
 }
 
 func (g *GettableRule) MarshalJSON() ([]byte, error) {
@@ -621,6 +653,60 @@ func (g *GettableRule) MarshalJSON() ([]byte, error) {
 		return json.Marshal(aux)
 	default:
 		copyStruct := *g
+		aux := Alias(copyStruct)
+		return json.Marshal(aux)
+	}
+}
+
+// Rule is the v2 API read model for an alerting rule. It aligns audit fields
+// with the canonical types.TimeAuditable / types.UserAuditable shape used by
+// PlannedMaintenance and other entities. v1 handlers keep serializing
+// GettableRule directly for back-compat with existing SDK / Terraform clients.
+type Rule struct {
+	Id    string     `json:"id" required:"true"`
+	State AlertState `json:"state" required:"true"`
+	PostableRule
+	types.TimeAuditable
+	types.UserAuditable
+}
+
+func NewRule(g *GettableRule) *Rule {
+	r := &Rule{
+		Id:           g.Id,
+		State:        g.State,
+		PostableRule: g.PostableRule,
+	}
+	r.CreatedAt = g.CreatedAt
+	r.UpdatedAt = g.UpdatedAt
+	if g.CreatedBy != nil {
+		r.CreatedBy = *g.CreatedBy
+	}
+	if g.UpdatedBy != nil {
+		r.UpdatedBy = *g.UpdatedBy
+	}
+	return r
+}
+
+func (r *Rule) MarshalJSON() ([]byte, error) {
+	type Alias Rule
+
+	switch r.SchemaVersion {
+	case DefaultSchemaVersion:
+		copyStruct := *r
+		aux := Alias(copyStruct)
+		if aux.RuleCondition != nil {
+			aux.RuleCondition.Thresholds = nil
+		}
+		aux.Evaluation = nil
+		aux.SchemaVersion = ""
+		aux.NotificationSettings = nil
+		return json.Marshal(aux)
+	case SchemaVersionV2Alpha1:
+		copyStruct := *r
+		aux := Alias(copyStruct)
+		return json.Marshal(aux)
+	default:
+		copyStruct := *r
 		aux := Alias(copyStruct)
 		return json.Marshal(aux)
 	}
