@@ -8,9 +8,16 @@ Define the OIDC auth-domain configuration contract across backend parsing, OpenA
 The system SHALL expose and persist OIDC config fields `scopes`, `emailVerifiedPolicy`, `enforceEmailDomain`, and `allowJit` through API schemas and frontend DTOs.
 
 #### Scenario: Create or update OIDC auth domain with extended fields
-- **GIVEN** an auth-domain create or update request includes extended OIDC fields
+- **GIVEN** an auth-domain create or update request carries `config` as a `{kind: "oidc", spec: {...}}` envelope
+- **AND** the `spec` includes extended OIDC fields
 - **WHEN** the request is validated and stored
-- **THEN** the same fields are available in subsequent auth-domain read responses
+- **THEN** the same fields are available in subsequent auth-domain read responses under `config.spec`
+
+#### Scenario: Migrate legacy auth-domain documents without losing extended fields
+- **GIVEN** a persisted auth domain written in the legacy `{ssoType, oidcConfig}` shape
+- **WHEN** the stored document is migrated to the `{enabled, config: {kind, spec}, roleMapping}` shape
+- **THEN** the whole legacy `oidcConfig` object becomes `config.spec`
+- **AND** `scopes`, `emailVerifiedPolicy`, `enforceEmailDomain`, and `allowJit` are carried over unchanged
 
 #### Scenario: OpenAPI schema includes OIDC policy fields
 - **GIVEN** API documentation is generated
@@ -61,15 +68,23 @@ The system SHALL map user-entered OIDC form fields into API payload format and m
 #### Scenario: Convert scopes text to API array
 - **GIVEN** admin enters comma or whitespace separated scopes text
 - **WHEN** the OIDC form is submitted
-- **THEN** payload contains normalized `scopes` array
+- **THEN** the `config.spec` payload contains a normalized `scopes` array
+- **AND** the form-only `scopesText` field is not sent
 
 #### Scenario: Omit empty scopes payload
 - **GIVEN** admin leaves scopes text blank
 - **WHEN** the OIDC form is submitted
 - **THEN** the payload omits `scopes` so backend defaults apply
 
+#### Scenario: Emit the OIDC config envelope
+- **GIVEN** the admin selected the OIDC provider
+- **WHEN** the OIDC form is submitted
+- **THEN** the request `config` is `{kind: "oidc", spec: <oidc config>}`
+- **AND** the spec carries `scopes`, `emailVerifiedPolicy`, `enforceEmailDomain`, and `allowJit`
+
 #### Scenario: Load existing OIDC config for editing
-- **GIVEN** an existing OIDC auth-domain record contains `scopes` and nullable `allowJit`
+- **GIVEN** an existing OIDC auth-domain record whose `config.kind` is `oidc`
+- **AND** whose `config.spec` contains `scopes` and nullable `allowJit`
 - **WHEN** the edit form is initialized
 - **THEN** scopes are shown as text
 - **AND** `allowJit` defaults to checked when omitted
