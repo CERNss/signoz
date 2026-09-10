@@ -258,6 +258,8 @@ OIDC 作为一等 callback 登录方式:签名 state、code 交换、id_token �
 | `pkg/alertmanager/alertmanagerserver/distpatcher_test.go` | TestAggrGroup 竞态时序修稳 | 上游修复同一 flaky 测试(截至 v0.140.0 未修,继续保留) |
 | ~~`pkg/contextlinks/alert_link_visitor.go`~~ | `fmt.Sprintf`+WriteString → `fmt.Fprintf`(lint 修) | **已取代**:v0.140.0 上游原生实现同一改法 |
 | ~~`tests/integration/fixtures/alertutils.py` 等~~ | 超时边界补 poll(**已于 v0.134 rebase 时丢弃**:上游重构整个集成测试目录) | 已取代 |
+| `tests/integration/tests/callbackauthn/01_domain.py` | 上游的 auth domain 往返测试断言 `data["config"] == expected_config` 全等,两个 OIDC 参数的期望值补上本 fork 多出的字段:`scopes`(默认 `openid/profile/email`)、`emailVerifiedPolicy`(minimal=`warn`,full=`ignore`)、`enforceEmailDomain`(`False`);`allowJit` 未设时 omitempty 不出现 | 上游自己实现等价字段(不太可能) |
+| `tests/fixtures/keycloak.py` | testcontainers 的 Keycloak 就绪探针只重试 ConnectionError/ReadTimeout,管理端口已监听但 `/health/ready` 尚未提供服务的窗口会以 404→HTTPError 直接失败(整个 callbackauthn 套件 32 个用例报错)。加 `_start_and_wait_until_ready()` 兜底轮询 | testcontainers 上游修掉该竞态 |
 | `.gitignore` | 忽略 `/.claude/`、`/.codex/`、`/.github/prompts/`、`/.github/skills/` | 不适用,保留 |
 | `README.md` | 分支变更总结(fork 自用,与上游 README 完全冲突时以本分支为准) | — |
 | `docs/main-switch-impact/README.md` | 切回官方 main 的数据影响评估(关键结论:观测数据可继承;`auth_domain.data` 的 `ssoType=oidc` 组织切回后登录高风险) | — |

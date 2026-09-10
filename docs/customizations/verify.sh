@@ -134,6 +134,13 @@ for df in cmd/community/Dockerfile cmd/community/Dockerfile.multi-arch cmd/enter
   check_grep "apk add --no-cache ca-certificates-bundle" "$df" "apk 加固"
 done
 
+echo "== P2 集成测试适配 =="
+# 上游 auth domain 往返测试断言 config 全等,必须带上本 fork 多出的 OIDC 字段
+check_grep "enforceEmailDomain" tests/integration/tests/callbackauthn/01_domain.py "往返测试含 fork 字段"
+check_grep "emailVerifiedPolicy" tests/integration/tests/callbackauthn/01_domain.py "往返测试含 fork 字段"
+# testcontainers 的 Keycloak 就绪探针对 404 不重试,需兜底轮询
+check_grep "_start_and_wait_until_ready" tests/fixtures/keycloak.py "Keycloak 就绪兜底"
+
 echo "== Spec / 文档 =="
 check_file openspec/specs/oidc-callback-authentication/spec.md "spec"
 check_file openspec/specs/oidc-domain-configuration/spec.md "spec"

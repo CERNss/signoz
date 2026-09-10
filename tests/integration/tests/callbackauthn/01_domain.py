@@ -404,8 +404,15 @@ def test_create_invalid_role_mapping(
                     "clientId": "client-id",
                     "clientSecret": "client-secret",
                     "claimMapping": {"email": "email", "name": "name", "groups": "groups", "role": "role"},
+                    # This fork adds four OIDCConfig fields on top of upstream
+                    # (scopes, emailVerifiedPolicy, enforceEmailDomain, allowJit).
+                    # The server defaults the first three on write, so they come
+                    # back on the follow-up GET; allowJit stays absent while unset.
+                    "scopes": ["openid", "profile", "email"],
                     "insecureSkipEmailVerified": False,
                     "getUserInfo": False,
+                    "emailVerifiedPolicy": "warn",
+                    "enforceEmailDomain": False,
                 },
             },
             None,
@@ -433,8 +440,16 @@ def test_create_invalid_role_mapping(
                     "clientId": "client-id",
                     "clientSecret": "client-secret",
                     "claimMapping": {"email": "eml", "name": "nm", "groups": "grps", "role": "rl"},
+                    # This fork adds four OIDCConfig fields on top of upstream
+                    # (scopes, emailVerifiedPolicy, enforceEmailDomain, allowJit).
+                    # The server defaults the first three on write, so they come
+                    # back on the follow-up GET; allowJit stays absent while unset.
+                    # insecureSkipEmailVerified=True defaults the policy to "ignore".
+                    "scopes": ["openid", "profile", "email"],
                     "insecureSkipEmailVerified": True,
                     "getUserInfo": True,
+                    "emailVerifiedPolicy": "ignore",
+                    "enforceEmailDomain": False,
                 },
             },
             None,
