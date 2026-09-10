@@ -112,7 +112,12 @@ check_file frontend/src/api/generated/services/sessions/index.ts "sessions servi
 echo "== P0-4 导航栏版本标签覆盖 =="
 check_grep "NAV_VERSION_OVERRIDE" frontend/src/container/SideNav/SideNav.tsx "版本覆盖"
 check_grep "NAV_LICENSE_TAG_OVERRIDE" frontend/src/container/SideNav/SideNav.tsx "license tag 覆盖"
+check_grep "NAV_DEFAULT_LICENSE_TAG = 'Community'" frontend/src/container/SideNav/SideNav.tsx "默认 license tag 为 Community"
 check_grep "NAV_VERSION_OVERRIDE" frontend/vite.config.ts "env 注入"
+# 展示版本由 CI 注入(与镜像 tag 同源),硬编码默认值因此不会随 rebase 过期
+check_grep "nav_version" .github/workflows/autobuild-community-dockerhub.yaml "nav_version 输出"
+check_grep "VITE_NAV_VERSION_OVERRIDE" .github/workflows/autobuild-community-dockerhub.yaml "版本注入"
+check_grep "VITE_NAV_LICENSE_TAG_OVERRIDE: Community" .github/workflows/autobuild-community-dockerhub.yaml "license tag 注入"
 
 echo "== P1 CI / Docker =="
 check_file .github/workflows/_autobuild-community-quality.yaml "质量门 workflow"

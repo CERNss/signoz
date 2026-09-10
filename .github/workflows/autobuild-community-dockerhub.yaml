@@ -56,6 +56,7 @@ jobs:
       image: ${{ steps.meta.outputs.image }}
       tags: ${{ steps.meta.outputs.tags }}
       alpine_digest: ${{ steps.alpine.outputs.digest }}
+      nav_version: ${{ steps.meta.outputs.nav_version }}
     steps:
       - name: checkout
         uses: actions/checkout@v5
@@ -143,8 +144,18 @@ jobs:
             TAGS="${TAGS},${IMAGE}:${GITHUB_REF_NAME}"
           fi
 
+          # SideNav 左上角展示的版本号。与镜像 tag 命名保持一致:tag 构建用 tag 名
+          # (如 v0.140.0-jhs.1),分支构建用 <分支>-<短 sha>(如 develop-42adf9b)。
+          # 由构建注入,前端代码里的硬编码默认值因此不会再过期。
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            NAV_VERSION="${GITHUB_REF_NAME}"
+          else
+            NAV_VERSION="${REF_SAFE}-${SHORT_SHA}"
+          fi
+
           echo "image=${IMAGE}" >> "${GITHUB_OUTPUT}"
           echo "tags=${TAGS}" >> "${GITHUB_OUTPUT}"
+          echo "nav_version=${NAV_VERSION}" >> "${GITHUB_OUTPUT}"
 
       - name: resolve-alpine-digest
         id: alpine
@@ -236,6 +247,8 @@ jobs:
           VITE_APPCUES_APP_ID: ""
           VITE_PYLON_APP_ID: ""
           VITE_PYLON_IDENTITY_SECRET: ""
+          VITE_NAV_VERSION_OVERRIDE: ${{ needs.init.outputs.nav_version }}
+          VITE_NAV_LICENSE_TAG_OVERRIDE: Community
         run: make js-build
 
       - name: build-community-binaries
@@ -330,6 +343,8 @@ jobs:
           VITE_APPCUES_APP_ID: ""
           VITE_PYLON_APP_ID: ""
           VITE_PYLON_IDENTITY_SECRET: ""
+          VITE_NAV_VERSION_OVERRIDE: ${{ needs.init.outputs.nav_version }}
+          VITE_NAV_LICENSE_TAG_OVERRIDE: Community
         run: make js-build
 
       - name: build-community-binaries

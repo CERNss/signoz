@@ -102,7 +102,7 @@ import './SideNav.styles.scss';
 
 const NAV_LICENSE_TAG_OPTIONS = ['Cloud', 'Enterprise', 'Free', 'Community'];
 const NAV_DEFAULT_VERSION = 'v0.119.0';
-const NAV_DEFAULT_LICENSE_TAG = 'Free';
+const NAV_DEFAULT_LICENSE_TAG = 'Community';
 
 const getNavLicenseTagOverride = (value?: string): string => {
 	if (!value) {

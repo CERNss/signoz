@@ -201,9 +201,19 @@ OIDC 作为一等 callback 登录方式:签名 state、code 交换、id_token �
 
 | 文件 | 符号/内容 |
 |---|---|
-| `frontend/src/container/SideNav/SideNav.tsx` | `NAV_VERSION_OVERRIDE`/`NAV_LICENSE_TAG_OVERRIDE` 读取;默认 `v0.119.0` / `Free`;`NAV_LICENSE_TAG_OPTIONS = ['Cloud','Enterprise','Free','Community']` |
-| `frontend/vite.config.ts` | 两个 env 注入 |
+| `frontend/src/container/SideNav/SideNav.tsx` | `NAV_VERSION_OVERRIDE`/`NAV_LICENSE_TAG_OVERRIDE` 读取;`NAV_DEFAULT_LICENSE_TAG = 'Community'`;`NAV_LICENSE_TAG_OPTIONS = ['Cloud','Enterprise','Free','Community']` |
+| `frontend/vite.config.ts` | 两个 env 注入(`VITE_*` → `process.env.NAV_*`) |
 | `frontend/example.env` | 示例变量 |
+| `.github/workflows/autobuild-community-dockerhub.yaml` | `init` job 输出 `nav_version`;两个 `build-frontend` step 注入 `VITE_NAV_VERSION_OVERRIDE` 与 `VITE_NAV_LICENSE_TAG_OVERRIDE: Community` |
+
+**行为要点**(2026-09-10 起):展示的版本号由构建注入,与镜像 tag 同源——tag 构建用 tag 名
+(`v0.140.0-jhs.1`),分支构建用 `<分支>-<短 sha>`(`develop-42adf9b`),因此 rebase 上游后不会
+再过期。校验方式:`VITE_NAV_VERSION_OVERRIDE=x pnpm build` 后 grep 产物,编译结果形如
+``c=`x` ``(minifier 会把硬编码默认值折掉)。
+
+> 已知残留:`NAV_DEFAULT_VERSION` 仍是 `'v0.119.0'`,只在**本地构建且未设 env** 时生效。
+> 镜像构建一律注入,不受影响。若要彻底消除,可改成不设 env 时回落到后端真实版本
+> (`effectiveCurrentVersion = navVersionOverride || currentVersion`,把默认值置空即可)。
 
 ## P1-1 Community 自动构建流水线(CI)
 
