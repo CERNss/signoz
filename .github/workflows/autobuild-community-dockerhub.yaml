@@ -253,6 +253,8 @@ jobs:
 
       - name: build-community-binaries
         shell: bash
+        env:
+          CGO_ENABLED: "0"
         run: |
           set -euo pipefail
           if [[ -n "${GOROOT:-}" && -x "${GOROOT}/bin/go" ]]; then
@@ -349,6 +351,8 @@ jobs:
 
       - name: build-community-binaries
         shell: bash
+        env:
+          CGO_ENABLED: "0"
         run: |
           set -euo pipefail
           if [[ -n "${GOROOT:-}" && -x "${GOROOT}/bin/go" ]]; then

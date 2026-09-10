@@ -126,6 +126,8 @@ echo "== P1 CI / Docker =="
 check_file .github/workflows/_autobuild-community-quality.yaml "质量门 workflow"
 check_file .github/workflows/autobuild-community-dockerhub.yaml "autobuild workflow"
 check_grep "BUILD_RUNNER" .github/workflows/autobuild-community-dockerhub.yaml "runner 选择"
+# Alpine 基础镜像是 musl,原生 amd64 构建默认 CGO=1 会链上 glibc loader 而无法 exec
+check_grep 'CGO_ENABLED: "0"' .github/workflows/autobuild-community-dockerhub.yaml "静态链接"
 check_grep "infra/signoz/community-build" .github/workflows/autobuild-community-dockerhub.yaml "Nexus 路径"
 check_grep "ALPINE_SHA" .github/workflows/autobuild-community-dockerhub.yaml "digest 传递"
 check_grep "alpine@sha256" cmd/community/Dockerfile "digest-pinned base"

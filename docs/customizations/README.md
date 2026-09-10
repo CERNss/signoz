@@ -241,7 +241,7 @@ OIDC 作为一等 callback 登录方式:签名 state、code 交换、id_token �
 | 文件 | 符号/内容 |
 |---|---|
 | `.github/workflows/_autobuild-community-quality.yaml` | 可复用质量门 workflow(整个文件,上游不存在) |
-| `.github/workflows/autobuild-community-dockerhub.yaml` | 整个文件,上游不存在。要点:runner 选择(dispatch input `runner` > 仓库变量 `BUILD_RUNNER` > 默认 `linux`;仓库变量现已设为 `linux`);质量门失败不构建;tag 规则(main→`latest`+branch+sha,git tag→`vX.Y.Z`);Alpine digest 解析后经 `ALPINE_SHA` build arg 传入;产物暂存按 sub2api 模式自适应:self-hosted runner 且 NEXUS_* 配置齐全时走 Nexus(`infra/signoz/community-build/<GITHUB_RUN_ID>.tar.gz`),GitHub 托管 runner 一律走 `actions/upload-artifact`(内网 Nexus 不可达) |
+| `.github/workflows/autobuild-community-dockerhub.yaml` | 整个文件,上游不存在。要点:runner 选择(dispatch input `runner` > 仓库变量 `BUILD_RUNNER` > 默认 `linux`;仓库变量现已设为 `linux`);质量门失败不构建;tag 规则(main→`latest`+branch+sha,git tag→`vX.Y.Z`);Alpine digest 解析后经 `ALPINE_SHA` build arg 传入;产物暂存按 sub2api 模式自适应:self-hosted runner 且 NEXUS_* 配置齐全时走 Nexus(`infra/signoz/community-build/<GITHUB_RUN_ID>.tar.gz`),GitHub 托管 runner 一律走 `actions/upload-artifact`(内网 Nexus 不可达);两个 `build-community-binaries` step 均设 `CGO_ENABLED: "0"`——Alpine 基础镜像是 musl,而 ubuntu runner 上 amd64 属原生编译、Go 默认 `CGO_ENABLED=1`,产出的二进制会依赖 `/lib64/ld-linux-x86-64.so.2`,在容器里 exec 直接报 `no such file or directory`(arm64 是交叉编译,CGO 自动关闭,因此只有 amd64 会炸) |
 | `.github/workflows/gor-signoz.yaml`、`gor-signoz-community.yaml` | 各 4 行调整 |
 
 ## P1-2 Docker 镜像加固
