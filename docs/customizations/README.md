@@ -66,9 +66,28 @@ JSON 路径从 `oidcConfig.*` 变成 `config.spec.*`。上游同时给 `issuer`/
 
 `git diff v0.134.0 v0.140.0 -- ee/authn/callbackauthn/oidccallbackauthn/authn.go` 的全部内容
 就是上面那套 envelope 适配,外加删掉 `LoginURL` 里冗余的 kind 断言(因为
-`Config().OIDCConfig()` 自带类型校验)——**上游没有任何新能力可移植**。我们保留了自己的
-kind 断言(改用 `authDomain.Kind()`),因为它给出明确的 `ErrCodeAuthDomainMismatch`,
-而不是泛化的类型不匹配错误。ee 目录本身未改一行。
+`Config().OIDCConfig()` 自带类型校验)。我们保留了自己的 kind 断言(改用
+`authDomain.Kind()`),因为它给出明确的 `ErrCodeAuthDomainMismatch`,而不是泛化的
+类型不匹配错误。ee 目录本身未改一行。
+
+> ⚠️ **这条曾经写成"上游没有任何新能力可移植",是错的。** 只 diff
+> `<上轮基线>..<本轮基线>` 的 ee 对照文件,会漏掉更早版本引入的改动——我们这份 pkg
+> 拷贝是在 v0.119.0 附近分出去的,而 base path 处理是上游 v0.128.0(`#11588`)加的,
+> 正好落在那个 diff 窗口之外(见下面第 6 条)。**正确做法是从我们这份拷贝的分叉点
+> 开始 diff**:`git diff <fork 点>..<新基线> -- ee/authn/callbackauthn/oidccallbackauthn/`。
+
+**6. 补回上游 v0.128.0 的 base path 处理(2026-09-10)**
+
+上游在 v0.128.0(`#11588`)给所有 callback provider 加了 base path 前缀,我们这份 pkg
+拷贝漏了。症状:`global::external_url` 带子路径时(如 `https://example.com/signoz`),
+交给 IdP 的 `redirect_uri` 与 `post_logout_redirect_uri` 会丢掉 `/signoz` 前缀,回调打到
+404。session handler 本来就做对了,只有 provider 漏了。
+
+修法照搬上游 ee 版与 community 的 Google provider:`AuthN` 加 `globalConfig global.Config`
+字段、`New(store, providerSettings, globalConfig)` 多收一个参数(`pkg/signoz/authn.go`
+传入)、两处 URL 改成 `path.Join(a.globalConfig.ExternalPath(), <path>)`。配套两条测试
+`TestLoginURLIncludesExternalBasePathInRedirectURI` 与
+`TestLogoutURLIncludesExternalBasePathInPostLogoutRedirectURI`。
 
 **4. 测试适配**
 
@@ -147,7 +166,7 @@ OIDC 作为一等 callback 登录方式:签名 state、code 交换、id_token �
 
 | 文件 | 符号/内容 |
 |---|---|
-| `pkg/authn/callbackauthn/oidccallbackauthn/authn.go` | 整个包(472 行);`oidcProviderAndOAuth2Config`、`claimsFromIDToken`、`claimsFromUserInfo`、`var _ authn.LogoutURLProvider`;envelope 适配后统一经 `authDomain.Config().OIDCConfig()` 取配置 |
+| `pkg/authn/callbackauthn/oidccallbackauthn/authn.go` | 整个包(476 行);`oidcProviderAndOAuth2Config`、`claimsFromIDToken`、`claimsFromUserInfo`、`var _ authn.LogoutURLProvider`;envelope 适配后统一经 `authDomain.Config().OIDCConfig()` 取配置;`globalConfig global.Config` 字段 + 两处 `path.Join(a.globalConfig.ExternalPath(), ...)`(base path,对齐上游 v0.128.0 `#11588`) |
 | `pkg/authn/callbackauthn/oidccallbackauthn/authn_test.go` | 整个文件(595 行测试);domain 由 `NewAuthDomainFromPostableAuthDomain` + `AuthDomainConfig{Kind, Spec}` 构造 |
 | `pkg/signoz/authn.go` | import `oidccallbackauthn`;registry 里 `authtypes.AuthNProviderOIDC: oidcCallbackAuthN`(上游只注册 `AuthNProviderGoogle`) |
 | `pkg/authn/authn.go` | `LogoutURLProvider` 接口 |

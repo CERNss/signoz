@@ -21,7 +21,7 @@ func NewAuthNs(ctx context.Context, providerSettings factory.ProviderSettings, s
 		return nil, err
 	}
 
-	oidcCallbackAuthN, err := oidccallbackauthn.New(store, providerSettings)
+	oidcCallbackAuthN, err := oidccallbackauthn.New(store, providerSettings, globalConfig)
 	if err != nil {
 		return nil, err
 	}

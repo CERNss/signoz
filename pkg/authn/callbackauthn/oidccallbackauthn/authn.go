@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"path"
 	"strings"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -16,6 +17,7 @@ import (
 	"github.com/SigNoz/signoz/pkg/authn"
 	"github.com/SigNoz/signoz/pkg/errors"
 	"github.com/SigNoz/signoz/pkg/factory"
+	"github.com/SigNoz/signoz/pkg/global"
 	"github.com/SigNoz/signoz/pkg/http/client"
 	"github.com/SigNoz/signoz/pkg/types/authtypes"
 	"github.com/SigNoz/signoz/pkg/valuer"
@@ -31,12 +33,13 @@ var _ authn.CallbackAuthN = (*AuthN)(nil)
 var _ authn.LogoutURLProvider = (*AuthN)(nil)
 
 type AuthN struct {
-	settings   factory.ScopedProviderSettings
-	store      authtypes.AuthNStore
-	httpClient *client.Client
+	settings     factory.ScopedProviderSettings
+	store        authtypes.AuthNStore
+	httpClient   *client.Client
+	globalConfig global.Config
 }
 
-func New(store authtypes.AuthNStore, providerSettings factory.ProviderSettings) (*AuthN, error) {
+func New(store authtypes.AuthNStore, providerSettings factory.ProviderSettings, globalConfig global.Config) (*AuthN, error) {
 	settings := factory.NewScopedProviderSettings(providerSettings, "github.com/SigNoz/signoz/pkg/authn/callbackauthn/oidccallbackauthn")
 
 	httpClient, err := client.New(providerSettings.Logger, providerSettings.TracerProvider, providerSettings.MeterProvider)
@@ -45,9 +48,10 @@ func New(store authtypes.AuthNStore, providerSettings factory.ProviderSettings) 
 	}
 
 	return &AuthN{
-		settings:   settings,
-		store:      store,
-		httpClient: httpClient,
+		settings:     settings,
+		store:        store,
+		httpClient:   httpClient,
+		globalConfig: globalConfig,
 	}, nil
 }
 
@@ -251,7 +255,7 @@ func (a *AuthN) LogoutURL(ctx context.Context, siteURL *url.URL, authDomain *aut
 	postLogoutRedirectURI := (&url.URL{
 		Scheme: siteURL.Scheme,
 		Host:   siteURL.Host,
-		Path:   postLogoutPath,
+		Path:   path.Join(a.globalConfig.ExternalPath(), postLogoutPath),
 	}).String()
 
 	query := endSessionURL.Query()
@@ -301,7 +305,7 @@ func (a *AuthN) oidcProviderAndOAuth2Config(ctx context.Context, siteURL *url.UR
 		RedirectURL: (&url.URL{
 			Scheme: siteURL.Scheme,
 			Host:   siteURL.Host,
-			Path:   redirectPath,
+			Path:   path.Join(a.globalConfig.ExternalPath(), redirectPath),
 		}).String(),
 	}, nil
 }

@@ -22,6 +22,7 @@ import (
 
 	signozerrors "github.com/SigNoz/signoz/pkg/errors"
 	"github.com/SigNoz/signoz/pkg/factory"
+	"github.com/SigNoz/signoz/pkg/global"
 	"github.com/SigNoz/signoz/pkg/types"
 	"github.com/SigNoz/signoz/pkg/types/authtypes"
 	"github.com/SigNoz/signoz/pkg/valuer"
@@ -518,12 +519,28 @@ func TestLoginURLRespectsConfiguredScopesAndAlwaysAddsOpenID(t *testing.T) {
 func mustNewProvider(t *testing.T, authDomain *authtypes.AuthDomain) *AuthN {
 	t.Helper()
 
+	return mustNewProviderWithGlobalConfig(t, authDomain, global.Config{})
+}
+
+// mustNewProviderWithGlobalConfig builds a provider whose external URL carries the
+// given base path, so the callback and post-logout URLs can be asserted against it.
+func mustNewProviderWithBasePath(t *testing.T, authDomain *authtypes.AuthDomain, basePath string) *AuthN {
+	t.Helper()
+
+	return mustNewProviderWithGlobalConfig(t, authDomain, global.Config{
+		ExternalURL: &url.URL{Scheme: "https", Host: "signoz.local", Path: basePath},
+	})
+}
+
+func mustNewProviderWithGlobalConfig(t *testing.T, authDomain *authtypes.AuthDomain, globalConfig global.Config) *AuthN {
+	t.Helper()
+
 	provider, err := New(&mockAuthNStore{domain: authDomain}, factory.ProviderSettings{
 		Logger:               slog.New(slog.DiscardHandler),
 		MeterProvider:        noop.NewMeterProvider(),
 		TracerProvider:       tracenoop.NewTracerProvider(),
 		PrometheusRegisterer: prometheus.NewRegistry(),
-	})
+	}, globalConfig)
 	if err != nil {
 		t.Fatalf("failed to create provider: %v", err)
 	}
@@ -592,4 +609,48 @@ func mustSignedStateFromLoginURL(t *testing.T, provider *AuthN, authDomain *auth
 	}
 
 	return state
+}
+
+// Upstream added base path handling to every callback provider in v0.128.0 (#11588).
+// These two tests pin it for this fork's community OIDC provider: when
+// global::external_url carries a sub path, the URLs handed to the IdP must carry it too,
+// otherwise the callback lands on a 404.
+func TestLoginURLIncludesExternalBasePathInRedirectURI(t *testing.T) {
+	testServer := newOIDCTestServer(t, map[string]any{"email": "user@example.com"}, nil)
+	defer testServer.close()
+
+	authDomain := mustNewOIDCDomain(t, testServer.issuer, false)
+	provider := mustNewProviderWithBasePath(t, authDomain, "/signoz")
+
+	siteURL := mustParseURL(t, "https://signoz.local/signoz/login")
+
+	loginURL, err := provider.LoginURL(context.Background(), siteURL, authDomain)
+	if err != nil {
+		t.Fatalf("expected login URL, got error: %v", err)
+	}
+
+	parsed := mustParseURL(t, loginURL)
+	if got, want := parsed.Query().Get("redirect_uri"), "https://signoz.local/signoz/api/v1/complete/oidc"; got != want {
+		t.Fatalf("expected redirect_uri %s, got %s", want, got)
+	}
+}
+
+func TestLogoutURLIncludesExternalBasePathInPostLogoutRedirectURI(t *testing.T) {
+	testServer := newOIDCTestServer(t, map[string]any{"email": "user@example.com"}, nil)
+	defer testServer.close()
+
+	authDomain := mustNewOIDCDomain(t, testServer.issuer, false)
+	provider := mustNewProviderWithBasePath(t, authDomain, "/signoz")
+
+	siteURL := mustParseURL(t, "https://signoz.local/signoz/login")
+
+	logoutURL, err := provider.LogoutURL(context.Background(), siteURL, authDomain)
+	if err != nil {
+		t.Fatalf("expected logout URL, got error: %v", err)
+	}
+
+	parsed := mustParseURL(t, logoutURL)
+	if got, want := parsed.Query().Get("post_logout_redirect_uri"), "https://signoz.local/signoz/login"; got != want {
+		t.Fatalf("expected post_logout_redirect_uri %s, got %s", want, got)
+	}
 }

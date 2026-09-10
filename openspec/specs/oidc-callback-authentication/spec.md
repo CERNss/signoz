@@ -20,6 +20,7 @@ The system SHALL generate OIDC authorization URLs for OIDC auth domains that inc
 - **WHEN** login URL is requested
 - **THEN** the URL targets the provider authorization endpoint
 - **AND** the query includes `redirect_uri` ending with `/api/v1/complete/oidc`
+- **AND** the `redirect_uri` path is prefixed with the `global::external_url` base path when one is configured
 - **AND** the query includes a versioned, signed `state` value
 - **AND** the query includes `prompt=select_account`
 
@@ -211,6 +212,7 @@ The system SHALL expose a session logout context for OIDC users by deriving prov
 - **WHEN** session logout context is requested
 - **THEN** response includes a non-empty logout URL targeting provider `end_session_endpoint`
 - **AND** the URL query includes `post_logout_redirect_uri` pointing to `/login` on the current SigNoz origin
+- **AND** that `post_logout_redirect_uri` path is prefixed with the `global::external_url` base path when one is configured
 - **AND** the URL query includes `client_id` from OIDC domain configuration
 
 #### Scenario: Fallback when provider logout is unavailable

@@ -39,6 +39,9 @@ check_file pkg/authn/callbackauthn/oidccallbackauthn/authn_test.go "OIDC callbac
 check_grep "oidcProviderAndOAuth2Config" pkg/authn/callbackauthn/oidccallbackauthn/authn.go "provider/oauth2 config"
 check_grep "authn.LogoutURLProvider" pkg/authn/callbackauthn/oidccallbackauthn/authn.go "logout URL provider impl"
 check_grep "claimsFromUserInfo" pkg/authn/callbackauthn/oidccallbackauthn/authn.go "UserInfo claims 兜底"
+# base path:对齐上游 v0.128.0(#11588),external_url 带子路径时回调 URL 必须带前缀
+check_grep "globalConfig.ExternalPath()" pkg/authn/callbackauthn/oidccallbackauthn/authn.go "回调 URL base path 前缀"
+check_grep "IncludesExternalBasePath" pkg/authn/callbackauthn/oidccallbackauthn/authn_test.go "base path 测试"
 # v0.140 kind/spec envelope:配置只能经 Config().OIDCConfig() 取
 check_grep "Config().OIDCConfig()" pkg/authn/callbackauthn/oidccallbackauthn/authn.go "envelope 适配"
 check_grep "oidccallbackauthn" pkg/signoz/authn.go "OIDC provider 注册"
